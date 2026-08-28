@@ -874,6 +874,45 @@ table.vocab td.num,
   transform: translateY(0) scale(0.97);
 }
 
+/**
+ * ①②③ 을 건너뛰는 샛길. 드롭존 안에 넣으면 지문 파일 올리는 일과 뒤섞여 읽히므로 밖에 따로 둔다.
+ * 이 화면의 주인공은 위의 드롭존이라 여기는 한 줄로 낮게 깔아 둔다.
+ */
+.setup-alt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-sm);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.import-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-sm);
+  padding: var(--s-md);
+}
+
+.import-body .hint {
+  margin: 0;
+}
+
+/* 못 찾은 표제어 목록. 본문과 구별되도록 등폭으로 두고 길어지면 접는다 */
+.import-failed {
+  margin-top: var(--s-xs);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.import-actions {
+  display: flex;
+  gap: var(--s-sm);
+  margin-top: var(--s-xs);
+}
+
 .field-row {
   display: flex;
   flex-wrap: wrap;

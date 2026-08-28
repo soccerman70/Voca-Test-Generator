@@ -77,6 +77,27 @@ export const useStore = create(
           }
         }),
 
+      /**
+       * 이미 만든 단어장 XLSX 를 그대로 받아 ④ 시험지 화면으로 간다.
+       *
+       * 지문 입력·표제어 선택을 거치지 않은 경로이므로 sourceFiles 와 selections 는 비운다.
+       * 남겨두면 불러온 단어장과 아무 관계 없는 선택이 화면에 남아 어긋난다.
+       * 불러오는 순간이 곧 확정이다 — 표를 고치면 updateRow 가 확정을 푼다.
+       */
+      loadWordbook: ({ rows, passages = [], docTitle = '' }) =>
+        set({
+          rows,
+          passages,
+          sourceFiles: [],
+          selections: [],
+          focusedId: passages[0]?.id ?? null,
+          docTitle,
+          antonymStats: null,
+          lastUsage: null,
+          confirmedAt: Date.now(),
+          step: 'quiz',
+        }),
+
       setPassages: (passages) =>
         set((s) => {
           const byId = new Map(passages.map((p) => [p.id, p]))

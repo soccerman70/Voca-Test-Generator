@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { extractText, fileKind } from '../lib/textExtract.js'
 import { splitMultiple, mergePassages, removePassage } from '../lib/passages.js'
 import { downloadText } from '../lib/exportXlsx.js'
+import { readWordbook } from '../lib/importXlsx.js'
 import { checkHealth } from '../lib/aiClient.js'
 import { useStore, DOC_TITLE_MAX } from '../store.js'
 import WorkflowBanner from './WorkflowBanner.jsx'
@@ -40,7 +41,10 @@ export default function SetupPanel() {
     model,
     docTitle,
     sourceFiles,
+    rows,
+    selections,
     loadPassages,
+    loadWordbook,
     setPassages,
     setTargetCount,
     setDocTitle,
@@ -56,8 +60,12 @@ export default function SetupPanel() {
   // [{ name, kind, text, pageCount, needsReview }]
   const [drafts, setDrafts] = useState(null)
   const [textDraft, setTextDraft] = useState(null) // 붙여넣기 입력창 내용. null이면 닫힌 상태
+  // 불러온 단어장. PDF 변환과 같은 이유로 여기서 한 번 멈춘다 — 무엇이 들어왔는지 보고 넘긴다.
+  // { name, rows, passages, docTitle, warnings }
+  const [imported, setImported] = useState(null)
   const [health, setHealth] = useState(null)
   const inputRef = useRef(null)
+  const wordbookRef = useRef(null)
 
   useEffect(() => {
     checkHealth().then(setHealth)
@@ -129,6 +137,29 @@ export default function SetupPanel() {
     },
     [ingest, sourceFiles]
   )
+
+  /** 이미 만든 단어장 XLSX 를 읽는다. 바로 넘기지 않고 무엇이 들어왔는지 먼저 보여준다. */
+  const handleWordbook = async (file) => {
+    if (!file) return
+    setError('')
+    setImported(null)
+    try {
+      setBusy({ label: `${file.name} 읽는 중…` })
+      const parsed = await readWordbook(file)
+      setImported({ name: file.name, ...parsed })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const applyWordbook = () => {
+    // 지문 입력·표제어 선택을 거치지 않는 경로라 지금까지의 작업이 전부 밀린다
+    const working = rows.length || selections.length || sourceFiles.length
+    if (working && !confirm('지금까지의 지문·표제어·단어장을 지우고 불러온 단어장으로 바꿀까요?')) return
+    loadWordbook({ rows: imported.rows, passages: imported.passages, docTitle: imported.docTitle })
+  }
 
   const removeSource = (key) => {
     const rest = sourceFiles.filter((f) => f.key !== key)
@@ -225,7 +256,75 @@ export default function SetupPanel() {
           )}
         </div>
 
+        {/* 이미 만든 단어장이 있으면 ①②③ 을 건너뛴다 */}
+        <div className="setup-alt">
+          <span>이미 만들어 둔 단어장이 있나요?</span>
+          <input
+            ref={wordbookRef}
+            type="file"
+            accept=".xlsx"
+            hidden
+            onChange={(e) => {
+              handleWordbook(e.target.files?.[0])
+              e.target.value = ''
+            }}
+          />
+          <button className="btn ghost sm" disabled={Boolean(busy)} onClick={() => wordbookRef.current?.click()}>
+            단어장 불러와서 시험지 만들기
+          </button>
+        </div>
+
         {error && <div className="error-box">{error}</div>}
+
+        {/* 불러온 단어장 확인 */}
+        {imported && (
+          <div className="panel">
+            <div className="panel-title">
+              불러온 단어장
+              <span className="count-pill">표제어 {imported.rows.length}개</span>
+            </div>
+            <div className="import-body">
+              <p className="hint">
+                {imported.name}
+                {imported.docTitle && ` · 제목 “${imported.docTitle}”`}
+                {imported.passages.length
+                  ? ` · 지문 ${imported.passages.length}개도 함께 들어 있습니다`
+                  : ' · 지문은 들어 있지 않습니다'}
+              </p>
+
+              {!imported.passages.length && (
+                <p className="hint">
+                  지문이 없어 PART IV 는 <strong>출처 문장 하나만</strong> 씁니다. 앞뒤 문장을 붙이지는 못하지만
+                  시험지는 그대로 만들어집니다.
+                </p>
+              )}
+
+              {imported.warnings.metaMissing && (
+                <p className="hint">
+                  형태 정보가 없는 예전 파일입니다. 출처 문장에서 되짚어
+                  <strong> {imported.warnings.recovered.length}개</strong>를 찾았습니다.
+                </p>
+              )}
+
+              {imported.warnings.failed.length > 0 && (
+                <div className="notice-box">
+                  <strong>{imported.warnings.failed.length}개</strong>는 지문에 나온 형태를 찾지 못해 표제어를 그대로
+                  씁니다 — PART IV 의 형태 다양성이 그만큼 줄어듭니다.
+                  <div className="import-failed">{imported.warnings.failed.join(' · ')}</div>
+                </div>
+              )}
+
+              <div className="import-actions">
+                <button className="btn primary" onClick={applyWordbook}>
+                  이 단어장으로 시험지 만들기 →
+                </button>
+                <button className="btn ghost" onClick={() => setImported(null)}>
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 2. PDF 변환 결과 확인 (특별 기능) */}
         {drafts && (
