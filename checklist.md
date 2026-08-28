@@ -83,27 +83,36 @@
 
 - [x] `exportXlsx.js` — `_meta`(surface·properNoun·passageNo) · `_passages`(no·label·english) 숨김 시트 추가
       → 검증: veryHidden 상태로 왕복 확인. 보이는 시트는 9열·채움·굵게 그대로, 지문이 없으면 `_passages` 를 만들지 않는다
-- [ ] `src/lib/importXlsx.js` — 워크북 → `{ rows, passages, docTitle, warnings }`
-      → 검증: `buildWorkbook(rows)` → `parseWorkbook()` 왕복 후 rows 가 원본과 같다
-- [ ] surface 역추적 — `_meta` 없는 옛 파일용. `sentence` 안에서 `headword` 의 굴절형을 찾는다
-      → 검증: `develop`/`developing`, 불규칙(`buy`/`bought`), 어구가 각각 어떻게 나오는지 확인
-- [ ] 이 앱 파일인지 판별 — `심화단어장` 시트와 9열 헤더가 맞는지
-      → 검증: 아무 엑셀이나 넣으면 거절 메시지가 뜬다
+- [x] `src/lib/importXlsx.js` — 워크북 → `{ rows, passages, docTitle, warnings }`
+      → 검증: 왕복 후 시험지가 읽는 필드가 원본과 같다 (confidence 는 담지 않는다)
+- [x] surface 역추적 — `_meta` 없는 옛 파일용. `sentence` 안에서 `headword` 의 굴절형을 찾는다
+      → 검증: 아래 판정 표 11건 통과
+- [x] 이 앱 파일인지 판별 — `심화단어장` 시트와 9열 헤더가 맞는지
+      → 검증: 빈 엑셀과 헤더가 바뀐 파일 모두 거절
 - [ ] `store.js` — `loadWordbook({ rows, passages, docTitle })` 액션
       → 검증: selections 는 비우고 confirmedAt 을 찍은 뒤 `step: 'quiz'` 로 간다
 - [ ] `SetupPanel.jsx` — "단어장 불러오기" 진입점과 확인 창
       → 검증: 기존 작업이 있을 때만 덮어쓰기 확인을 묻는다
 - [ ] 지문 파일 함께 올리기 (선택)
       → 검증: 올리면 PART IV 앞뒤 문장이 붙고, 안 올려도 시험지가 나온다
-- [ ] `tools/smoke-test.mjs` 에 왕복 테스트 추가
+- [x] `tools/smoke-test.mjs` 에 왕복 테스트 추가 — [8] 단어장 불러오기 27건
       → 검증: AI 호출 없이 통과
 - [ ] lint · 빌드 · 스모크 테스트 통과
 
 ## 판정 기대값 (surface 역추적)
 
-| headword | sentence 안의 형태 | 기대 |
+| headword | sentence 안의 형태 | 결과 |
 | --- | --- | --- |
-| `develop` | `developing countries` | `developing` |
-| `society` | `modern societies face` | `societies` |
-| `buy` | `he bought a house` | 못 찾음 → headword 로 두고 경고에 셈 |
-| `lose track of` | `lost track of time` | 어구는 부분 문자열로 찾는다 |
+| `develop` | `Developing countries face this.` | `Developing` |
+| `society` | `Modern societies face pressure.` | `societies` |
+| `analysis` | `These analyses were rejected.` | `analyses` |
+| `rely` | `They relied on it.` | `relied` |
+| `immerse` | `She immersed herself in it.` | `immersed` (묵음 e 처리) |
+| `occur` | `It occurred twice.` | `occurred` |
+| `lose track of` | `They lose track of time.` | `lose track of` |
+| `buy` | `He bought a house.` | **못 찾음** — 불규칙은 규칙으로 되돌릴 수 없다 |
+| `lose track of` | `He lost track of time.` | **못 찾음** — 어구의 첫 낱말이 불규칙 변화 |
+| `rate` | `The rats multiplied.` | **못 찾음** — 오탐 방지 (rate → rat 으로 줄이지 않는다) |
+| `rat` | `The ration was small.` | **못 찾음** — 같은 이유 |
+
+못 찾은 것은 `headword` 를 그대로 surface 로 두고 `warnings.failed` 에 담아 화면에 알린다.

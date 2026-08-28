@@ -171,5 +171,79 @@ check('품사 축약 매핑', ['명사', '형용사', '어구', '부사'].map(sh
   ['명사', '형용사', '어구', '부사'].map(shortPos).join(''))
 check('이미 한 글자면 그대로', shortPos('동') === '동')
 
+/* 8. 단어장 불러오기 (왕복) ----------------------------------- */
+console.log('')
+console.log('[8] 단어장 불러오기')
+const { parseWorkbook, recoverSurface } = await import('../src/lib/importXlsx.js')
+const { META_SHEET } = await import('../src/lib/exportXlsx.js')
+
+const samplePassages = [{ id: 'p1', no: 1, label: '1', english: p1.english, korean: p1.korean }]
+const reload = async (workbook) => {
+  const w = new ExcelJS.Workbook()
+  await w.xlsx.load(await workbook.xlsx.writeBuffer())
+  return parseWorkbook(w)
+}
+
+const back = await reload(buildWorkbook(sampleRows, { title: '2026 여름 SET B', passages: samplePassages }))
+check('행 개수 유지', back.rows.length === 2, `${back.rows.length}개`)
+check('surface 복원', back.rows[0].surface === 'immersed', back.rows[0].surface)
+check('passageNo 는 숫자', back.rows[0].passageNo === 1, JSON.stringify(back.rows[0].passageNo))
+check('파생어 되읽기', JSON.stringify(back.rows[0].derivatives) ===
+  JSON.stringify([{ word: 'immersion', pos: '명' }, { word: 'immersive', pos: '형' }]),
+  JSON.stringify(back.rows[0].derivatives))
+check('유의어 되읽기', back.rows[0].synonyms.map((x) => x.word).join(',') === 'absorb,engross')
+check('빈 반의어는 빈 배열', back.rows[0].antonyms.length === 0)
+check('사용자 제목 살아남음', back.docTitle === '2026 여름 SET B', back.docTitle)
+check('지문 함께 복원', back.passages.length === 1 && back.passages[0].english === p1.english)
+check('완전한 파일은 경고 없음', !back.warnings.metaMissing && back.warnings.failed.length === 0,
+  JSON.stringify(back.warnings))
+
+// 제목을 비운 채 내보내면 첫 줄이 기본 이름이다. 그것은 사용자가 정한 제목이 아니다.
+const noTitle = await reload(buildWorkbook(sampleRows, { title: '정상JLS 심화단어장 — 11강.docx' }))
+check('기본 제목은 빈 제목으로', noTitle.docTitle === '', JSON.stringify(noTitle.docTitle))
+check('지문 없으면 빈 배열', noTitle.passages.length === 0)
+
+// _meta 가 없는 옛 파일 — 출처 문장에서 되짚는다
+const oldFile = buildWorkbook(sampleRows, { title: '옛 파일' })
+oldFile.removeWorksheet(oldFile.getWorksheet(META_SHEET).id)
+const recovered = await reload(oldFile)
+check('_meta 없음을 알린다', recovered.warnings.metaMissing)
+check('출처 칸이 숫자면 지문 번호를 되찾는다', recovered.rows[0].passageNo === 1,
+  JSON.stringify(recovered.rows[0].passageNo))
+check('역추적으로 surface 복원', recovered.rows[0].surface === 'immersed',
+  `${recovered.rows[0].surface} / 못 찾음 ${JSON.stringify(recovered.warnings.failed)}`)
+
+const recoverCases = [
+  ['develop', 'Developing countries face this.', 'Developing'],
+  ['society', 'Modern societies face pressure.', 'societies'],
+  ['analysis', 'These analyses were rejected.', 'analyses'],
+  ['rely', 'They relied on it.', 'relied'],
+  ['immerse', 'She immersed herself in it.', 'immersed'],
+  ['occur', 'It occurred twice.', 'occurred'],
+  ['lose track of', 'They lose track of time.', 'lose track of'],
+  // 규칙으로 되돌릴 수 없는 것들 — 못 찾았다고 알리는 것이 맞다
+  ['buy', 'He bought a house.', null],
+  ['lose track of', 'He lost track of time.', null],
+  // 잘못 묶이면 안 되는 것들
+  ['rate', 'The rats multiplied.', null],
+  ['rat', 'The ration was small.', null],
+]
+for (const [head, sentence, want] of recoverCases) {
+  const got = recoverSurface(head, sentence)
+  check(`역추적 ${head} / ${want === null ? '없음' : want}`, got === want, JSON.stringify(got))
+}
+
+const junk = new ExcelJS.Workbook()
+junk.addWorksheet('Sheet1').addRow(['a', 'b'])
+let rejected = ''
+try { await reload(junk) } catch (e) { rejected = e.message }
+check('남의 엑셀은 거절', rejected.includes('심화단어장'), rejected.slice(0, 34))
+
+const wrongHeader = buildWorkbook(sampleRows, { title: 'x' })
+wrongHeader.getWorksheet('심화단어장').getRow(2).getCell(2).value = '단어'
+let headerMsg = ''
+try { await reload(wrongHeader) } catch (e) { headerMsg = e.message }
+check('열 구성이 다르면 거절', headerMsg.includes('열 구성'), headerMsg.slice(0, 22))
+
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)

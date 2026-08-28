@@ -148,3 +148,32 @@ headword 로 대체하면 PART IV 후보 5개가 전부 '원형'이 되고, `tak
 
 ExcelJS 의 `row.values` 는 **성긴 배열**이다. 빈 셀이 `undefined` 로 남아 열 위치가 어긋날 수 있다.
 불러오기에서는 `row.getCell(n)` 으로 위치를 지정해 읽는다.
+
+### 역추적에서 걸린 것 두 가지 (2026-08-29)
+
+**낱말 경계를 안 봐서 단어가 잘렸다.** `develop` 를 `"Developing countries…"` 에서 찾을 때
+`indexOf` 만 쓰면 0번 자리에서 걸려 `"Develop"` 을 잘라 온다. 지문에 없는 형태를 정답으로
+내놓는 셈이라, 형태를 못 찾는 것보다 나쁘다. 양끝이 낱말 경계인 자리만 인정하도록 고쳤다.
+그러면 정확 일치에 실패하고 굴절 비교로 내려가 `"Developing"` 을 제대로 찾는다.
+
+**묵음 e 동사가 통째로 빠졌다.** `stripInflection('immersed')` 는 `ed` 를 떼어 `immers` 를 주지만
+`immerse` 는 그대로 `immerse` 다. 키가 어긋나 못 찾는다. create/created, produce/produced,
+achieve/achieved… 학술 지문에 흔한 부류가 전부 여기 걸린다.
+
+그래서 표제어 쪽 열쇠에서 끝 `e` 를 뗀 것도 후보로 함께 본다. 단 **남는 길이가 4자 미만이면
+만들지 않는다** — `rate` 를 `rat` 으로 줄이면 문장 속 `rats` 와 잘못 묶인다.
+`duplicates.js` 의 `MIN_STEM` 과 같은 이유이고 같은 값이다. 여기서 오탐은 지문에 없는 형태를
+정답으로 만들기 때문에 미탐보다 훨씬 나쁘다.
+
+### 어구는 첫 낱말이 변하면 포기한다
+
+`lose track of` 를 `He lost track of time.` 에서 찾는 것은 규칙으로 안 된다.
+`stripInflection('lost')` 는 `lost` 그대로다 (불규칙). 창을 밀며 굴절 열쇠를 견주는 방식으로는
+잡히지 않는다. 억지로 맞추려면 첫 낱말만 느슨하게 보는 규칙이 필요한데, 그러면
+`take care of` / `took part in` 류가 잘못 묶인다. 못 찾았다고 알리는 쪽을 택했다.
+
+### 옛 파일에서 passageNo 를 되찾는 조건
+
+출처 칸은 `passageLabel ?? passageNo` 라서 파일이 하나면 `"1"`, 여럿이면 `"11강-1"` 이다.
+숫자로만 이루어졌을 때만 지문 번호로 되돌린다. `"11강-1"` 은 `passageNo` 를 비워 두는데,
+어차피 `_meta` 없는 파일에는 `_passages` 도 없으므로 PART IV 는 문장 하나만 쓴다.

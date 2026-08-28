@@ -165,7 +165,8 @@ function addHiddenSheet(wb, name, columns, objects) {
   return ws
 }
 
-const DEFAULT_TITLE = '정상JLS 심화단어장'
+/** 제목을 비웠을 때 쓰는 이름. 불러올 때 '사용자가 정한 제목'과 구별하는 데도 쓴다. */
+export const DEFAULT_TITLE = '정상JLS 심화단어장'
 
 /** 윈도우에서 파일 이름에 쓸 수 없는 문자를 걷어낸다. */
 function safeFileName(text) {
