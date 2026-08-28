@@ -45,3 +45,65 @@
 | `ration` / `rat` | **중복 아님** | 어근이 짧아지면 잘라내지 않는다 |
 | `less` / `lesson` | **중복 아님** | 같은 이유 |
 | `lose track of time` / `lose` | **중복 아님** | 어구는 전체 문자열로만 비교한다 |
+
+---
+
+# 단어장 불러오기 → 시험지 생성
+
+이미 만들어 둔 단어장 XLSX 를 열어 ①②③ 을 건너뛰고 곧장 ④ 시험지 화면으로 간다.
+
+## 배경
+
+시험지 로직(`quizAllocate` · `quizBuild` · `quizClient`)은 `rows` 배열만 보고 동작한다.
+`App.jsx` 의 진입 조건도 이미 `quiz: rows.length > 0` 이라 **`rows` 를 채우면 ④ 로 갈 수 있다.**
+새 파이프라인은 필요 없다. 문제는 XLSX 왕복에서 필드가 새는 것뿐이다.
+
+내보내는 9열에 없는데 시험지가 쓰는 것.
+
+| 필드 | 쓰임 | 없으면 |
+| --- | --- | --- |
+| `surface` | `answer: row.surface`, `verbForm(surface, headword)` | PART IV 형태 다양성이 전부 '원형'으로 무너진다 |
+| `properNoun` | `allocate()` 의 출제 제외 조건 | 고유명사가 시험에 나온다 |
+| `passageNo`(숫자) | `passages.find(p => p.no === ...)` | 앞뒤 문장 확장 불가 |
+| `passages` | `renderPartIVItem` 문맥 확장 | fallback 으로 문장 하나만 쓴다 (동작은 함) |
+
+## 결정 사항
+
+- 불러오는 대상은 **이 앱이 내보낸 XLSX 만.** 외부 엑셀은 거절 메시지를 띄운다.
+- 지문 원문 파일은 **선택 사항.** 없어도 시험지는 나온다.
+- 기존 작업이 있으면 **확인 후 덮어쓴다.**
+- 왕복 정보는 **숨김 시트**에 넣는다. 보이는 `심화단어장` 시트는 한 칸도 바꾸지 않는다 —
+  선생님이 열어보는 파일의 모양이 달라지면 안 된다.
+- `_meta` 는 JSON 한 덩어리가 아니라 **표 형태**로 넣는다. 셀 32767자 제한에 걸리지 않고,
+  깨졌을 때 눈으로 확인할 수 있다.
+- 숨김 시트가 없는 **옛 파일은 역추적으로 살린다.** 못 살린 개수는 화면에 알린다 —
+  조용히 넘어가면 PART IV 가 왜 단조로운지 아무도 모른다.
+
+## 작업
+
+- [x] `exportXlsx.js` — `_meta`(surface·properNoun·passageNo) · `_passages`(no·label·english) 숨김 시트 추가
+      → 검증: veryHidden 상태로 왕복 확인. 보이는 시트는 9열·채움·굵게 그대로, 지문이 없으면 `_passages` 를 만들지 않는다
+- [ ] `src/lib/importXlsx.js` — 워크북 → `{ rows, passages, docTitle, warnings }`
+      → 검증: `buildWorkbook(rows)` → `parseWorkbook()` 왕복 후 rows 가 원본과 같다
+- [ ] surface 역추적 — `_meta` 없는 옛 파일용. `sentence` 안에서 `headword` 의 굴절형을 찾는다
+      → 검증: `develop`/`developing`, 불규칙(`buy`/`bought`), 어구가 각각 어떻게 나오는지 확인
+- [ ] 이 앱 파일인지 판별 — `심화단어장` 시트와 9열 헤더가 맞는지
+      → 검증: 아무 엑셀이나 넣으면 거절 메시지가 뜬다
+- [ ] `store.js` — `loadWordbook({ rows, passages, docTitle })` 액션
+      → 검증: selections 는 비우고 confirmedAt 을 찍은 뒤 `step: 'quiz'` 로 간다
+- [ ] `SetupPanel.jsx` — "단어장 불러오기" 진입점과 확인 창
+      → 검증: 기존 작업이 있을 때만 덮어쓰기 확인을 묻는다
+- [ ] 지문 파일 함께 올리기 (선택)
+      → 검증: 올리면 PART IV 앞뒤 문장이 붙고, 안 올려도 시험지가 나온다
+- [ ] `tools/smoke-test.mjs` 에 왕복 테스트 추가
+      → 검증: AI 호출 없이 통과
+- [ ] lint · 빌드 · 스모크 테스트 통과
+
+## 판정 기대값 (surface 역추적)
+
+| headword | sentence 안의 형태 | 기대 |
+| --- | --- | --- |
+| `develop` | `developing countries` | `developing` |
+| `society` | `modern societies face` | `societies` |
+| `buy` | `he bought a house` | 못 찾음 → headword 로 두고 경고에 셈 |
+| `lose track of` | `lost track of time` | 어구는 부분 문자열로 찾는다 |

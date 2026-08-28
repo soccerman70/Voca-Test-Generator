@@ -4,7 +4,7 @@ import { downloadXlsx, formatDerivatives, formatWords } from '../lib/exportXlsx.
 import { filesLabel } from '../lib/passages.js'
 
 export default function ResultTable() {
-  const { rows, antonymStats, lastUsage, model, sourceFiles, docTitle, confirmedAt, setStep, updateRow, removeRow } =
+  const { rows, antonymStats, lastUsage, model, sourceFiles, passages, docTitle, confirmedAt, setStep, updateRow, removeRow } =
     useStore()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -23,7 +23,8 @@ export default function ResultTable() {
     setSaving(true)
     setError('')
     try {
-      await downloadXlsx(rows, { title: docTitle, sourceName: filesLabel(sourceFiles) })
+      // 지문까지 담아 두어야 나중에 이 파일만으로 시험지를 다시 낼 수 있다
+      await downloadXlsx(rows, { title: docTitle, sourceName: filesLabel(sourceFiles), passages })
     } catch (err) {
       setError(`엑셀 저장 실패: ${err.message}`)
     } finally {

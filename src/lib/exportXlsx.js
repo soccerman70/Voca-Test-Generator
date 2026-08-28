@@ -16,6 +16,32 @@ export const COLUMNS = [
   { key: 'sentence', header: '출처 문장', width: 64 },
 ]
 
+/** 보이는 시트 이름. 이 앱이 만든 파일인지 판별하는 데도 쓴다. */
+export const SHEET = '심화단어장'
+
+/** 왕복 전용 숨김 시트. 불러오기가 같은 이름을 써야 하므로 함께 내보낸다. */
+export const META_SHEET = '_meta'
+export const PASSAGE_SHEET = '_passages'
+
+/**
+ * 시험지 생성이 쓰지만 보이는 시트에는 담기지 않는 값들.
+ * surface 가 없으면 verbForm 이 전부 '원형'을 돌려주어 PART IV 형태 다양성이 조용히 죽는다.
+ * 열 이름으로 읽고 쓰므로 나중에 열이 늘어도 그전에 내보낸 파일이 깨지지 않는다.
+ */
+export const META_COLUMNS = [
+  'no',
+  'id',
+  'surface',
+  'properNoun',
+  'passageNo',
+  'passageLabel',
+  'normalizationNote',
+  'missing',
+]
+
+/** PART IV 가 앞뒤 문장을 붙일 때 쓰는 지문 원문. english 와 no 만 있으면 되지만 화면 표기용으로 label 도 담는다. */
+export const PASSAGE_COLUMNS = ['id', 'no', 'label', 'english', 'korean']
+
 /** 파생어는 한 줄에 하나씩. 엑셀 셀은 wrapText 가 켜져 있어 줄바꿈이 그대로 보인다. */
 export function formatDerivatives(list) {
   return (list || []).map((d) => (d.pos ? `${d.word} (${d.pos})` : d.word)).join('\n')
@@ -44,13 +70,16 @@ export function toRowObjects(rows) {
   }))
 }
 
-/** 워크북 생성만 담당한다 (브라우저 API를 쓰지 않아 Node에서도 검증할 수 있다). */
-export function buildWorkbook(rows, { title } = {}) {
+/**
+ * 워크북 생성만 담당한다 (브라우저 API를 쓰지 않아 Node에서도 검증할 수 있다).
+ * @param {Array} [passages] 함께 담아 둘 지문 원문. 있으면 나중에 불러왔을 때 PART IV 가 문맥을 넓힐 수 있다.
+ */
+export function buildWorkbook(rows, { title, passages } = {}) {
   const wb = new ExcelJS.Workbook()
   wb.creator = '정상JLS 심화단어장'
   wb.created = new Date()
 
-  const ws = wb.addWorksheet('심화단어장', {
+  const ws = wb.addWorksheet(SHEET, {
     views: [{ state: 'frozen', ySplit: 2 }],
   })
 
@@ -90,7 +119,50 @@ export function buildWorkbook(rows, { title } = {}) {
   }
 
   ws.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: COLUMNS.length } }
+
+  addHiddenSheet(
+    wb,
+    META_SHEET,
+    META_COLUMNS,
+    rows.map((r, i) => ({
+      no: i + 1,
+      id: r.id ?? '',
+      surface: r.surface ?? '',
+      properNoun: Boolean(r.properNoun),
+      passageNo: r.passageNo ?? '',
+      passageLabel: r.passageLabel ?? '',
+      normalizationNote: r.normalizationNote ?? '',
+      missing: Boolean(r.missing),
+    }))
+  )
+
+  if (passages?.length) {
+    addHiddenSheet(
+      wb,
+      PASSAGE_SHEET,
+      PASSAGE_COLUMNS,
+      passages.map((p) => ({
+        id: p.id ?? '',
+        no: p.no ?? '',
+        label: p.label ?? '',
+        english: p.english ?? '',
+        korean: p.korean ?? '',
+      }))
+    )
+  }
+
   return wb
+}
+
+/**
+ * 왕복용 숨김 시트. veryHidden 이라 엑셀에서 숨김 해제 메뉴에도 나오지 않는다 —
+ * 선생님이 여는 파일은 심화단어장 시트 하나뿐인 그대로여야 한다.
+ */
+function addHiddenSheet(wb, name, columns, objects) {
+  const ws = wb.addWorksheet(name, { state: 'veryHidden' })
+  ws.addRow(columns)
+  for (const obj of objects) ws.addRow(columns.map((key) => obj[key]))
+  return ws
 }
 
 const DEFAULT_TITLE = '정상JLS 심화단어장'
@@ -106,11 +178,13 @@ function safeFileName(text) {
 /**
  * @param {string} [title] 사용자가 정한 단어장 제목. 있으면 엑셀 첫 줄과 파일 이름에 모두 쓴다.
  * @param {string} [sourceName] 제목을 비웠을 때 첫 줄에 덧붙일 원본 파일 이름
+ * @param {Array} [passages] 숨김 시트에 함께 담을 지문 원문
  */
-export async function downloadXlsx(rows, { fileName, title, sourceName } = {}) {
+export async function downloadXlsx(rows, { fileName, title, sourceName, passages } = {}) {
   const custom = String(title || '').trim()
   const wb = buildWorkbook(rows, {
     title: custom || `${DEFAULT_TITLE}${sourceName ? ` — ${sourceName}` : ''}`,
+    passages,
   })
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], {
