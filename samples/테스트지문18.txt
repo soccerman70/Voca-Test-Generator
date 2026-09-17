@@ -1,0 +1,53 @@
+1.
+Coral reefs occupy a negligible fraction of the ocean floor, yet they sustain roughly a quarter of all marine species. This disproportionate productivity stems from a symbiosis between coral polyps and photosynthetic algae that inhabit their tissues. When water temperatures rise beyond a narrow threshold, the corals expel these algae, and the reef bleaches. Recovery is possible, but repeated thermal stress erodes the resilience that once allowed reefs to rebound within a decade.
+
+2.
+The invention of double-entry bookkeeping in Renaissance Italy did more than tidy the ledgers of merchants. By requiring every transaction to be recorded twice, it made discrepancies conspicuous and thereby rendered fraud harder to conceal. Historians have argued that this quiet innovation underpinned the rise of large commercial enterprises, since investors could now scrutinize accounts they had not personally supervised. Trust, in other words, was manufactured by arithmetic.
+
+3.
+Linguists once assumed that children acquire grammar by imitating adults, but the errors children make undermine that account. A toddler who says "goed" instead of "went" has plainly not copied anyone; she has inferred a rule and overextended it. Such systematic mistakes suggest that language learning involves the active construction of hypotheses rather than passive absorption, a conclusion that reshaped developmental psychology.
+
+4.
+Urban planners have grown wary of widening roads to relieve congestion. The phenomenon known as induced demand means that additional capacity attracts additional drivers, and within a few years traffic returns to its former crawl. Cities that have instead narrowed thoroughfares and invested in transit often report the opposite effect: some trips simply evaporate. The lesson is that infrastructure does not merely accommodate behavior; it shapes it.
+
+5.
+Antibiotic resistance is not a distant hypothetical but an accelerating clinical reality. Every course of treatment exerts selective pressure, culling susceptible bacteria and leaving hardier strains to proliferate. Because resistance genes can be transferred laterally between unrelated species, a trait that emerges in a harmless gut microbe may later surface in a virulent pathogen. Prudent prescribing therefore protects not only the individual patient but the wider population.
+
+6.
+The Dutch painter Vermeer left behind fewer than forty canvases, and for two centuries his name languished in obscurity. His rediscovery in the nineteenth century owed much to critics who prized the luminous stillness of his interiors. Recent analysis suggests he may have employed optical devices to achieve such fidelity, a proposition that some scholars find diminishing and others regard as immaterial to the enduring power of the paintings.
+
+7.
+Sleep was long treated as a passive interlude, but researchers now characterize it as an active period of consolidation. During slow-wave sleep the hippocampus appears to replay the experiences of the day, gradually transferring them to cortical storage. Depriving volunteers of this stage impairs their recall of newly learned material even when total sleep duration is preserved, which implies that the architecture of sleep matters as much as its quantity.
+
+8.
+Economists distinguish between risk, where probabilities are known, and uncertainty, where they are not. Financial models frequently blur this boundary, assigning precise numbers to contingencies that resist quantification. The consequences became vivid in 2008, when instruments deemed nearly riskless proved catastrophically fragile. Critics contend that the appearance of rigor lent unwarranted confidence to judgments that were, at bottom, speculative.
+
+9.
+Migratory birds navigate with a precision that continues to confound explanation. Some species appear to detect the magnetic field of the Earth through photoreceptive proteins in the retina, effectively seeing magnetic orientation as a visual overlay. Others rely on stellar patterns learned during their first summer. That a warbler weighing a few grams can traverse a continent and return to the same hedgerow suggests redundancy among several independent systems.
+
+10.
+The concept of the commons has been rehabilitated since the fieldwork of Elinor Ostrom. Where earlier theorists predicted that shared resources would inevitably be depleted, she documented communities that had governed fisheries and irrigation systems sustainably for centuries. Their success rested on locally devised rules, graduated sanctions, and accessible mechanisms for resolving disputes. Her work demonstrated that neither privatization nor state control exhausts the available options.
+
+11.
+Translators confront a recurring dilemma between fidelity to the letter and fidelity to the effect. A pun that lands in one language may have no counterpart in another, forcing a choice between an accurate but inert rendering and an inventive substitution that betrays the original words while honoring its spirit. Practitioners increasingly describe their craft as a form of authorship rather than transcription.
+
+12.
+Volcanic eruptions can perturb the global climate for years. When an eruption is powerful enough to inject sulfur dioxide into the stratosphere, the resulting aerosols reflect incoming sunlight and cool the surface. The eruption of Mount Tambora in 1815 produced a summer so cold that harvests failed across the Northern Hemisphere. Such episodes offer a natural analogue for proposals to engineer the climate deliberately.
+
+13.
+The rise of remote work has unsettled assumptions about the necessity of proximity. Firms that once regarded spontaneous encounters as indispensable to innovation have found that distributed teams can be productive, though weak ties between departments tend to atrophy. What erodes is not output but the informal circulation of knowledge, which may prove costly only after a lag long enough to obscure the cause.
+
+14.
+Archaeologists working in the Levant have revised the chronology of agriculture. Rather than a sudden transition from foraging, the evidence points to a protracted period during which communities cultivated wild cereals without domesticating them. Grain morphology changed only gradually over two millennia. This slower picture undermines narratives that cast farming as a decisive break and instead frames it as an accumulation of small adjustments.
+
+15.
+The placebo effect complicates the evaluation of any therapy. Patients who believe they are receiving treatment often improve measurably, and the magnitude of this improvement varies with the ritual surrounding it: injections outperform pills, and elaborate procedures outperform simple ones. Rather than dismissing such responses as noise, some clinicians argue that they constitute a legitimate component of care that deserves systematic cultivation.
+
+16.
+Photographic film rendered color through layered emulsions, each sensitive to a portion of the spectrum. Digital sensors instead place a mosaic of filters over a grid of photosites and reconstruct the missing values computationally. The resulting images are, strictly speaking, interpolations. Purists lament the loss of an unmediated trace of light, though the distinction has become difficult to sustain now that film stocks were themselves engineered to flatter certain complexions.
+
+17.
+Legal systems differ in how they treat precedent. Common-law jurisdictions bind judges to prior rulings, producing incremental development but occasional rigidity when an outdated decision proves difficult to dislodge. Civil-law systems accord statutes primacy and treat earlier judgments as persuasive rather than binding. Neither approach eliminates judicial discretion; they merely relocate it, and comparative scholars caution against overstating the contrast.
+
+18.
+Desalination has expanded rapidly in arid regions, yet its costs extend beyond electricity. The process yields a hypersaline brine that, when discharged into coastal waters, can deplete oxygen and harm benthic communities. Engineers have proposed diluting the effluent or recovering minerals from it, but these remedies add expense. Whether the technology proves sustainable depends less on the efficiency of the membranes than on the disposal of what they leave behind.

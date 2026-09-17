@@ -180,13 +180,16 @@ const routes = {
 
   /** AI 자동 표제어 추출 */
   async select(body) {
-    const { passages, targetCount, model, exclude } = body
+    const { passages, model, exclude } = body
     if (!Array.isArray(passages) || !passages.length) throw new Error('지문이 없습니다.')
-    if (!targetCount || targetCount < 1) throw new Error('표제어 개수가 올바르지 않습니다.')
+    // 지문별 목표 개수(quota)는 클라이언트가 분량 비례로 계산해 실어 보낸다.
+    const quoted = passages
+      .map((p) => ({ no: Number(p.no), english: String(p.english || ''), quota: Math.round(Number(p.quota) || 0) }))
+      .filter((p) => p.english.trim() && p.quota > 0)
+    if (!quoted.length) throw new Error('표제어 개수가 올바르지 않습니다.')
 
     const prompt = buildSelectPrompt({
-      passages,
-      targetCount,
+      passages: quoted,
       exclude: Array.isArray(exclude) ? exclude.slice(0, 400) : [],
     })
     const { text, usage, durationMs } = await runClaude(prompt, { model })

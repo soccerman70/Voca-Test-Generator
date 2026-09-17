@@ -5,6 +5,7 @@
 import mammoth from 'mammoth'
 import { readFile } from 'node:fs/promises'
 import { splitPassages, sentenceAt } from '../src/lib/passages.js'
+import { planQuotas } from '../src/lib/aiClient.js'
 import { tokenize, locateSurface } from '../src/lib/tokenize.js'
 
 const PORT = process.argv[2] || '5181'
@@ -27,19 +28,24 @@ async function post(path, body) {
 
 /* ---- 1. 자동 표제어 추출 ---- */
 console.log('\n=== /api/ai/select — 자동 표제어 추출 (12개 요청) ===')
+// 지문별 목표 개수는 분량 비례로 나눠 실어 보낸다 — 화면과 같은 방식이다.
+const quotas = planQuotas(passages, 12)
 const { data: sel, secs: selSecs } = await post('select', {
-  passages: passages.map((p) => ({ no: p.no, english: p.english })),
-  targetCount: 12,
+  passages: passages
+    .map((p, i) => ({ no: p.no, english: p.english, quota: quotas[i] }))
+    .filter((p) => p.quota > 0),
   model: 'claude-opus-5',
 })
 console.log(`받은 항목: ${sel.items.length}개 · ${selSecs}초`)
+console.log(`지문별 쿼터: ${passages.map((p, i) => `${p.no}:${quotas[i]}`).join(" · ")}`)
+console.log(`지문별 응답: ${passages.map((p) => `${p.no}:${sel.items.filter((it) => Number(it.passageNo) === p.no).length}`).join(" · ")}`)
 
 let matched = 0
 for (const it of sel.items) {
   const p = passages.find((x) => x.no === Number(it.passageNo))
   const hit = p ? locateSurface(p.english, tokenize(p.english), it.surface) : null
   if (hit) matched += 1
-  console.log(` ${hit ? '✓' : '✗'} 지문${it.passageNo}  ${JSON.stringify(it.surface).padEnd(28)} ${it.reason || ''}`)
+  console.log(` ${hit ? '✓' : '✗'} 지문${it.passageNo}  ${JSON.stringify(it.surface).padEnd(28)} 난이도${it.difficulty ?? '-'}  ${it.reason || ''}`)
 }
 console.log(`지문에서 위치를 찾은 항목: ${matched}/${sel.items.length}`)
 

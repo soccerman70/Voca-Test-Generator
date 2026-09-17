@@ -7,8 +7,18 @@ const ANTONYM_TARGET_RATIO = 0.4
 const ANTONYM_MAX_RATIO = 0.5
 const ANTONYM_MIN_RATIO = 0.3
 
+/**
+ * 브라우저에서는 같은 출처로 상대 경로를 쓴다.
+ * node 로 도는 점검 도구(tools/*.mjs)는 출처가 없으므로 VOCA_API_BASE 로 dev 서버를 가리킨다.
+ * 도구가 임포트 뒤에 포트를 정할 수 있어야 하므로 값은 부를 때마다 읽는다.
+ */
+function apiBase() {
+  if (typeof window !== 'undefined') return ''
+  return globalThis.process?.env?.VOCA_API_BASE || 'http://localhost:5180'
+}
+
 async function post(path, body) {
-  const res = await fetch(`/api/ai/${path}`, {
+  const res = await fetch(`${apiBase()}/api/ai/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -20,21 +30,12 @@ async function post(path, body) {
 
 export async function checkHealth() {
   try {
-    const res = await fetch('/api/ai/health')
+    const res = await fetch(`${apiBase()}/api/ai/health`)
     if (!res.ok) return { ok: false, error: `상태 확인 실패 (${res.status})` }
     return await res.json()
   } catch (err) {
     return { ok: false, error: err.message }
   }
-}
-
-export function autoSelect({ passages, targetCount, model, exclude = [] }) {
-  return post('select', {
-    passages: passages.map((p) => ({ no: p.no, english: p.english })),
-    targetCount,
-    exclude,
-    model,
-  })
 }
 
 /**
@@ -43,6 +44,121 @@ export function autoSelect({ passages, targetCount, model, exclude = [] }) {
  * 3개 동시 실행이 순차 대비 2.54배 — 이론 최대 3배의 85% — 로 나왔다.
  */
 const CONCURRENCY = 4
+
+/**
+ * 지문 묶음 하나에 지문을 몇 개까지 넣을지.
+ * 한 번에 전부 넣으면 모델이 앞 지문부터 개수를 채우다 목표에 도달해 뒤 지문을 비운다.
+ * 묶음을 잘게 쪼개면 각 호출이 자기 지문만 보게 되어 그 쏠림이 원천적으로 사라진다.
+ */
+const SELECT_GROUP_SIZE = 3
+
+/** 쿼터보다 넉넉히 받아 난이도로 추려낼 여유분 배수. */
+export const SELECT_OVERSAMPLE = 1.5
+
+const countWords = (text) => (String(text || '').match(/\S+/g) || []).length
+
+/**
+ * 지문 분량(단어 수)에 비례해 지문별 목표 개수를 나눈다.
+ * 합계는 정확히 targetCount 가 되게 맞춘다 — 소수부가 큰 지문부터 남은 몫을 하나씩 준다.
+ * 목표가 지문 수보다 많다면 어느 지문도 0개로 두지 않는다.
+ */
+export function planQuotas(passages, targetCount) {
+  const weights = passages.map((p) => countWords(p.english))
+  const totalWeight = weights.reduce((a, b) => a + b, 0)
+  if (!passages.length || targetCount <= 0) return passages.map(() => 0)
+  // 분량을 잴 수 없으면 균등 분배로 되돌린다
+  const exact = totalWeight
+    ? weights.map((w) => (w / totalWeight) * targetCount)
+    : passages.map(() => targetCount / passages.length)
+
+  const quotas = exact.map((e) => Math.floor(e))
+  let rest = targetCount - quotas.reduce((a, b) => a + b, 0)
+  const byFraction = exact
+    .map((e, i) => ({ i, frac: e - Math.floor(e) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i)
+  for (let k = 0; rest > 0; k += 1, rest -= 1) quotas[byFraction[k % quotas.length].i] += 1
+
+  if (targetCount >= passages.length) {
+    for (let i = 0; i < quotas.length; i += 1) {
+      if (quotas[i] > 0) continue
+      let fattest = 0
+      for (let j = 1; j < quotas.length; j += 1) if (quotas[j] > quotas[fattest]) fattest = j
+      if (quotas[fattest] <= 1) break
+      quotas[fattest] -= 1
+      quotas[i] += 1
+    }
+  }
+  return quotas
+}
+
+/**
+ * AI 자동 표제어 추출.
+ *
+ * 지문을 묶음으로 쪼개 동시에 호출한다. 각 호출에는 그 묶음 지문의 목표 개수가 박혀 나가므로
+ * 앞쪽 지문 쏠림이 생기지 않는다. 최종 선별은 호출자가 난이도로 한다.
+ *
+ * @param quotas passages 와 같은 순서의 지문별 최종 목표 개수. 실제 요청은 oversample 배수만큼 더 한다.
+ */
+export async function autoSelect({
+  passages,
+  quotas,
+  model,
+  exclude = [],
+  oversample = SELECT_OVERSAMPLE,
+  groupSize = SELECT_GROUP_SIZE,
+  concurrency = CONCURRENCY,
+  onProgress,
+  signal,
+}) {
+  const targets = []
+  passages.forEach((p, i) => {
+    const quota = Math.max(0, Math.round(quotas?.[i] ?? 0))
+    if (quota > 0) targets.push({ no: p.no, english: p.english, quota: Math.ceil(quota * oversample) })
+  })
+
+  const usage = { inputTokens: 0, outputTokens: 0, cacheCreation: 0, durationMs: 0 }
+  if (!targets.length) return { items: [], usage }
+
+  const groups = []
+  for (let i = 0; i < targets.length; i += groupSize) groups.push(targets.slice(i, i + groupSize))
+
+  // 끝나는 순서는 뒤섞이지만 결과는 지문 순서를 지켜야 한다. 묶음별 자리를 미리 잡아두고 제자리에 채운다.
+  const perGroup = new Array(groups.length).fill(null)
+  let doneGroups = 0
+  const report = () => onProgress?.({ group: doneGroups, groupCount: groups.length })
+  report()
+
+  let cursor = 0
+  async function worker() {
+    for (;;) {
+      const index = cursor
+      cursor += 1
+      if (index >= groups.length) return
+      if (signal?.aborted) throw new Error('사용자가 취소했습니다.')
+
+      const { items, usage: u, durationMs } = await post('select', {
+        passages: groups[index],
+        exclude,
+        model,
+      })
+
+      if (u) {
+        usage.inputTokens += u.input_tokens || 0
+        usage.outputTokens += u.output_tokens || 0
+        usage.cacheCreation += u.cache_creation_input_tokens || 0
+      }
+      usage.durationMs += durationMs || 0
+
+      perGroup[index] = Array.isArray(items) ? items : []
+      doneGroups += 1
+      report()
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, groups.length) }, worker))
+
+  return { items: perGroup.flat(), usage }
+}
 
 /**
  * 표제어 정규화 + 파생어/유의어/반의어 생성.

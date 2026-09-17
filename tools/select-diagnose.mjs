@@ -1,82 +1,52 @@
 /**
- * AI 자동 추출이 목표 개수를 정확히 채우는지 점검한다.
- * Workspace.runAutoSelect 와 같은 로직(초과분 잘라내기 + 부족분 재요청)을 재현한다.
- *   node tools/select-diagnose.mjs [포트] [목표개수]
+ * AI 자동 추출이 목표 개수를 채우고, 지문 전체에 고르게 퍼지는지 점검한다.
+ * 선별 규칙은 화면과 같은 src/lib/selectPlan.js 를 그대로 쓴다 — 여기서 로직을 베끼지 않는다.
+ *   node tools/select-diagnose.mjs [포트] [목표개수] [지문파일]
+ *
+ * 지문파일은 .docx 또는 .txt. 생략하면 samples/샘플지문.docx 를 쓴다.
  */
 import mammoth from 'mammoth'
 import { readFile } from 'node:fs/promises'
 import { splitPassages } from '../src/lib/passages.js'
-import { tokenize, locateSurface } from '../src/lib/tokenize.js'
+import { autoSelect, planQuotas } from '../src/lib/aiClient.js'
+import { runSelection } from '../src/lib/selectPlan.js'
 
 const PORT = process.argv[2] || '5180'
+process.env.VOCA_API_BASE = `http://localhost:${PORT}`
 const TARGET = Number(process.argv[3] || 50)
-const MAX_ROUNDS = 3
+const SOURCE = process.argv[4] || 'samples/샘플지문.docx'
 
-const { value: text } = await mammoth.extractRawText({ buffer: await readFile('samples/샘플지문.docx') })
+const text = SOURCE.endsWith('.docx')
+  ? (await mammoth.extractRawText({ buffer: await readFile(SOURCE) })).value
+  : await readFile(SOURCE, 'utf8')
 const { passages } = splitPassages(text)
 
-async function requestSelect(targetCount, exclude) {
-  const res = await fetch(`http://localhost:${PORT}/api/ai/select`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      passages: passages.map((p) => ({ no: p.no, english: p.english })),
-      targetCount,
-      exclude,
-      model: 'claude-opus-5',
-    }),
-  })
-  const data = await res.json()
-  if (data.error) throw new Error(data.error)
-  return data.items || []
+/** 화면과 똑같이 autoSelect 를 부른다 — 묶음 쪼개기·초과 표집까지 실제 경로 그대로다. */
+async function request({ passages: ps, quotas, exclude }) {
+  const { items } = await autoSelect({ passages: ps, quotas, exclude, model: 'claude-opus-5' })
+  return items
 }
 
-const added = []
-const takenByPassage = new Map()
-const exclude = new Set()
-const drops = { notFound: 0, clash: 0, noPassage: 0 }
-let overshoot = 0
-let rounds = 0
+const quotas = planQuotas(passages, TARGET)
+console.log(`지문 ${passages.length}개 · 목표 ${TARGET}개`)
+console.log(`쿼터: ${passages.map((p, i) => `지문${p.no}:${quotas[i]}`).join(' · ')}\n`)
 
-while (added.length < TARGET && rounds < MAX_ROUNDS) {
-  rounds += 1
-  const want = TARGET - added.length
-  const items = await requestSelect(want, [...exclude])
-  console.log(`${rounds}차 — 요청 ${want}개 · 응답 ${items.length}개`)
-  if (!items.length) break
+const { added, rounds, drops, error } = await runSelection({
+  passages,
+  quotas,
+  needed: TARGET,
+  kept: [],
+  request,
+  onStage: ({ round, shortCount }) => console.log(`${round}차 — 배정 미달 지문 ${shortCount}개에 요청`),
+})
 
-  for (const item of items) {
-    if (added.length >= TARGET) {
-      overshoot += 1
-      continue
-    }
-    const passage = passages.find((p) => p.no === Number(item.passageNo))
-    if (!passage) {
-      drops.noPassage += 1
-      continue
-    }
-    if (!takenByPassage.has(passage.id)) takenByPassage.set(passage.id, [])
-    const taken = takenByPassage.get(passage.id)
-    const hit = locateSurface(passage.english, tokenize(passage.english), item.surface, taken)
-    if (!hit) {
-      drops.notFound += 1
-      continue
-    }
-    const clash = added.some((s) => s.passageId === passage.id && s.start < hit.end && hit.start < s.end)
-    if (clash) {
-      drops.clash += 1
-      continue
-    }
-    taken.push(hit.start)
-    const surface = passage.english.slice(hit.start, hit.end)
-    exclude.add(surface.toLowerCase())
-    added.push({ passageId: passage.id, passageNo: passage.no, start: hit.start, end: hit.end, surface })
-  }
-}
+if (error) console.log(`\n호출 실패: ${error.message}`)
 
 const ok = added.length === TARGET
 console.log(`\n${ok ? '통과' : '미달'} — 목표 ${TARGET}개 / 최종 ${added.length}개 · ${rounds}회 요청`)
-console.log(`초과분 잘라냄 ${overshoot} · 못 찾음 ${drops.notFound} · 자리 겹침 ${drops.clash} · 지문번호 불일치 ${drops.noPassage}`)
+console.log(
+  `못 찾음 ${drops.notFound} · 자리 겹침 ${drops.clash} · 굴절형 중복 ${drops.duplicate} · 지문번호 불일치 ${drops.noPassage}`
+)
 
 const dup = new Set()
 const repeated = added.filter((s) => {
@@ -87,7 +57,11 @@ const repeated = added.filter((s) => {
 })
 console.log(`중복 표제어: ${repeated.length}${repeated.length ? ` — ${repeated.map((s) => s.surface).join(', ')}` : ''}`)
 
-const perPassage = passages.map((p) => `지문${p.no}:${added.filter((s) => s.passageNo === p.no).length}`)
-console.log(`지문별 분배: ${perPassage.join(' · ')}`)
+// 쿼터와 실제 분배를 나란히 놓아야 쏠림이 눈에 보인다
+const actual = passages.map((p) => added.filter((s) => s.passageNo === p.no).length)
+console.log(`지문별 쿼터 : ${passages.map((p, i) => `${p.no}:${quotas[i]}`).join(' · ')}`)
+console.log(`지문별 실제 : ${passages.map((p, i) => `${p.no}:${actual[i]}`).join(' · ')}`)
+console.log(`빈 지문: ${actual.filter((n) => n === 0).length}개 / ${passages.length}개`)
+console.log(`난이도 분포: ${[5, 4, 3, 2, 1].map((d) => `${d}→${added.filter((s) => s.difficulty === d).length}`).join(' · ')}`)
 
-process.exit(ok ? 0 : 1)
+process.exitCode = ok && !error ? 0 : 1

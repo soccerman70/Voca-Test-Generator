@@ -4,14 +4,10 @@ import SelectionPanel from './SelectionPanel.jsx'
 import MetaPanel from './MetaPanel.jsx'
 import GenerateModal from './GenerateModal.jsx'
 import { useStore, sortSelections } from '../store.js'
-import { tokenize, locateSurface } from '../lib/tokenize.js'
-import { sentenceAt, filesLabel } from '../lib/passages.js'
-import { guessPos, guessLevel } from '../lib/posLite.js'
-import { findDuplicates, inflectionKey } from '../lib/duplicates.js'
-import { autoSelect, enrichAll } from '../lib/aiClient.js'
-
-/** AI가 개수를 못 맞출 때 부족분을 다시 요청하는 최대 횟수 */
-const MAX_ROUNDS = 3
+import { filesLabel } from '../lib/passages.js'
+import { findDuplicates } from '../lib/duplicates.js'
+import { autoSelect, enrichAll, planQuotas } from '../lib/aiClient.js'
+import { runSelection } from '../lib/selectPlan.js'
 
 const REGENERATE_WARNING =
   '이전 생성된 자료가 존재합니다. 다시 생성하시겠습니까?\n\n' +
@@ -61,9 +57,10 @@ export default function Workspace() {
   /* ---------------- AI 자동 추출 ---------------- */
 
   /**
-   * AI는 요청한 개수를 정확히 맞춰주지 않는다(더 많이 주기도, 덜 주기도 한다).
-   * 그래서 개수는 여기서 코드로 보장한다 — 넘치면 잘라내고, 부족하면 이미 고른 것을 제외 목록으로
-   * 넘겨 최대 MAX_ROUNDS 회까지 더 요청한다.
+   * AI 자동 표제어 추출.
+   *
+   * 지문 분량에 비례해 지문별 쿼터를 정하고, 지문을 묶음으로 쪼개 동시에 묻는다.
+   * 모은 후보에서 최종 표제어를 고르는 규칙은 src/lib/selectPlan.js 에 있다.
    */
   const runAutoSelect = useCallback(async () => {
     const kept = selections.filter((s) => s.origin !== 'ai')
@@ -76,119 +73,58 @@ export default function Workspace() {
     setAiBusy(true)
     setAiError('')
 
-    const added = []
-    const takenByPassage = new Map()
-    const exclude = new Set(kept.map((s) => s.surface.toLowerCase()))
-    // 제외 목록은 프롬프트로 부탁하는 것일 뿐이라 AI 가 지킨다는 보장이 없다. 받은 뒤 여기서 다시 막는다.
-    const takenKeys = new Set(kept.map((s) => inflectionKey(s.surface)).filter(Boolean))
-    const drops = { notFound: 0, clash: 0, noPassage: 0, duplicate: 0 }
-    let overshoot = 0
-    let rounds = 0
+    const quotas = planQuotas(passages, needed)
 
-    try {
-      while (added.length < needed && rounds < MAX_ROUNDS) {
-        rounds += 1
-        const want = needed - added.length
+    const { added, rounds, drops, error } = await runSelection({
+      passages,
+      quotas,
+      needed,
+      kept,
+      onStage: ({ round, shortCount }) =>
         setAiMessage(
-          rounds === 1
-            ? `AI가 ${want}개를 고르는 중… (지문 ${passages.length}개 분석)`
-            : `${added.length}/${needed}개 확보 · 부족한 ${want}개를 더 고르는 중… (${rounds}차 시도)`
-        )
-
+          round === 1
+            ? `AI가 지문 ${shortCount}개에서 ${needed}개를 고르는 중…`
+            : `지문 ${shortCount}개가 배정량에 못 미쳐 더 고르는 중… (${round}차 시도)`
+        ),
+      request: async ({ passages: ps, quotas: qs, exclude }) => {
         const { items } = await autoSelect({
-          passages,
-          targetCount: want,
+          passages: ps,
+          quotas: qs,
+          exclude,
           model,
-          exclude: [...exclude],
+          onProgress: ({ group, groupCount }) =>
+            setAiMessage(`AI가 지문을 분석하는 중… (묶음 ${group}/${groupCount})`),
         })
-        if (!items?.length) break
+        return items
+      },
+    })
 
-        for (const item of items) {
-          if (added.length >= needed) {
-            overshoot += 1
-            continue
-          }
-          const passage = passages.find((p) => p.no === Number(item.passageNo))
-          if (!passage) {
-            drops.noPassage += 1
-            continue
-          }
-          if (!takenByPassage.has(passage.id)) {
-            takenByPassage.set(
-              passage.id,
-              kept.filter((s) => s.passageId === passage.id).map((s) => s.start)
-            )
-          }
-          const taken = takenByPassage.get(passage.id)
-          const hit = locateSurface(passage.english, tokenize(passage.english), item.surface, taken)
-          if (!hit) {
-            drops.notFound += 1
-            continue
-          }
-          // 이미 고른 자리와 겹치면 건너뛴다
-          const clash = [...kept, ...added].some(
-            (s) => s.passageId === passage.id && s.start < hit.end && hit.start < s.end
-          )
-          if (clash) {
-            drops.clash += 1
-            continue
-          }
+    replaceSelections([...kept, ...added])
+    setAiBusy(false)
 
-          const surface = passage.english.slice(hit.start, hit.end)
-          // 굴절형만 다른 것도 정규화하면 같은 표제어가 된다 (societies ↔ society)
-          const key = inflectionKey(surface)
-          if (key && takenKeys.has(key)) {
-            drops.duplicate += 1
-            continue
-          }
-
-          taken.push(hit.start)
-          takenKeys.add(key)
-          const sentence = sentenceAt(passage.english, hit.start)
-          exclude.add(surface.toLowerCase())
-          added.push({
-            id: `ai${passage.id}_${hit.start}`,
-            passageId: passage.id,
-            passageNo: passage.no,
-            passageLabel: passage.label,
-            from: hit.from,
-            to: hit.to,
-            start: hit.start,
-            end: hit.end,
-            surface,
-            sentence,
-            pos: guessPos(surface, sentence),
-            level: guessLevel(surface),
-            origin: 'ai',
-          })
-        }
-      }
-
-      replaceSelections([...kept, ...added])
-
-      const notes = []
-      if (overshoot) notes.push(`초과 제안 ${overshoot}개 잘라냄`)
-      if (drops.notFound) notes.push(`지문에서 못 찾음 ${drops.notFound}개`)
-      if (drops.clash) notes.push(`이미 고른 자리와 겹침 ${drops.clash}개`)
-      if (drops.duplicate) notes.push(`이미 고른 단어와 중복 ${drops.duplicate}개`)
-      if (drops.noPassage) notes.push(`지문 번호 불일치 ${drops.noPassage}개`)
-      const detail = notes.length ? ` (${notes.join(' · ')})` : ''
-
-      if (added.length >= needed) {
-        setAiMessage(`AI가 ${added.length}개를 골랐습니다${detail}. 직접 더하거나 뺄 수 있습니다.`)
-      } else {
-        setAiMessage(
-          `${rounds}회 시도해 ${added.length}/${needed}개를 채웠습니다${detail}. ` +
-            '지문에서 더 고를 만한 표현이 없다는 뜻입니다. 목표 개수를 줄이거나 지문을 더 넣어주세요.'
-        )
-      }
-    } catch (err) {
-      // 중간까지 확보한 것은 살린다
-      if (added.length) replaceSelections([...kept, ...added])
-      setAiError(`${err.message}${added.length ? ` (${added.length}개까지는 확보했습니다)` : ''}`)
+    if (error) {
+      setAiError(`${error.message}${added.length ? ` (${added.length}개까지는 확보했습니다)` : ''}`)
       setAiMessage('')
-    } finally {
-      setAiBusy(false)
+      return
+    }
+
+    const notes = []
+    if (drops.notFound) notes.push(`지문에서 못 찾음 ${drops.notFound}개`)
+    if (drops.clash) notes.push(`이미 고른 자리와 겹침 ${drops.clash}개`)
+    if (drops.duplicate) notes.push(`이미 고른 단어와 중복 ${drops.duplicate}개`)
+    if (drops.noPassage) notes.push(`지문 번호 불일치 ${drops.noPassage}개`)
+    const detail = notes.length ? ` (${notes.join(' · ')})` : ''
+
+    if (added.length >= needed) {
+      const used = new Set(added.map((s) => s.passageNo)).size
+      setAiMessage(
+        `AI가 지문 ${used}개에서 ${added.length}개를 골랐습니다${detail}. 직접 더하거나 뺄 수 있습니다.`
+      )
+    } else {
+      setAiMessage(
+        `${rounds}회 시도해 ${added.length}/${needed}개를 채웠습니다${detail}. ` +
+          '지문에서 더 고를 만한 표현이 없다는 뜻입니다. 목표 개수를 줄이거나 지문을 더 넣어주세요.'
+      )
     }
   }, [model, passages, replaceSelections, selections, targetCount])
 
@@ -332,3 +268,4 @@ export default function Workspace() {
     </div>
   )
 }
+
