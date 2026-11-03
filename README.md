@@ -98,6 +98,10 @@ npm run dev
 결과 테이블에서 셀을 직접 고친 뒤 **XLSX**로 내려받는다. 출처(지문 번호)와 출처 문장이 함께 들어간다.
 보이지 않는 시트에 지문 원문과 왕복용 정보(`surface` 등)도 담겨, 나중에 그 파일을 다시 불러올 수 있다.
 
+내려받은 파일을 엑셀에서 고쳤다면 **⬆ 고친 엑셀 불러오기**로 다시 올린다. 고친 줄 · 새 줄 · 지운 줄 개수를
+먼저 보여주고, **이 내용으로 표 바꾸기**를 누르면 표가 파일 내용으로 바뀐다. 줄을 지우고 번호를 다시 매겨도
+줄마다 지문 속 형태가 제자리를 찾는다. 다른 지문에서 나온 단어장이면 지문도 함께 바뀐다고 미리 알린다.
+
 ### 4단계 — 단어시험지 생성
 
 헤더의 **④ 단어시험지 생성**을 누르면 단어장이 확정되고 시험지 화면으로 넘어간다.
@@ -157,7 +161,7 @@ src/
     quizBuild.js    AI 없이 조립하는 PART I · IV
     quizClient.js   PART II · III · V · VI 동시 생성과 결과 검사
     exportDocx.js   시험지 · 정답해설지 docx 내보내기
-  components/       SetupPanel · WorkflowBanner · Workspace · PassageCard · SelectionPanel · MetaPanel · GenerateModal · ResultTable · QuizPanel
+  components/       SetupPanel · WorkflowBanner · Workspace · PassageCard · SelectionPanel · MetaPanel · GenerateModal · ResultTable · ImportNotes · QuizPanel
   store.js          zustand 전역 상태 (localStorage 보존)
 tools/
   make-sample-docx.mjs  테스트용 샘플 지문 docx 생성

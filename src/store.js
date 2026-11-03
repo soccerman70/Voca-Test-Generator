@@ -98,6 +98,33 @@ export const useStore = create(
           step: 'quiz',
         }),
 
+      /**
+       * 3단계에서, 내보냈다가 엑셀에서 고친 단어장을 다시 받는다. 화면은 3단계에 머문다.
+       *
+       * 표는 파일 내용으로 통째로 바꾼다 — 보이는 시트가 내용의 진실이다.
+       * 같은 지문에서 나온 단어장이면 지문·표제어 선택은 그대로 둔다. 다른 작업의 파일이면
+       * loadWordbook 처럼 함께 바꾼다. 남겨두면 표와 상관없는 지문이 시험지 문맥에 쓰인다.
+       * 반의어 통계와 생성 시간은 AI 가 만든 표에 대한 것이라 지운다.
+       * 표가 바뀌었으니 확정도 풀린다 (updateRow 와 같은 규칙).
+       */
+      replaceWordbook: ({ rows, passages = [], docTitle = '', sameWork }) =>
+        set((s) => ({
+          rows,
+          antonymStats: null,
+          lastUsage: null,
+          confirmedAt: null,
+          step: 'result',
+          ...(sameWork
+            ? { docTitle: docTitle || s.docTitle }
+            : {
+                passages,
+                sourceFiles: [],
+                selections: [],
+                focusedId: passages[0]?.id ?? null,
+                docTitle,
+              }),
+        })),
+
       setPassages: (passages) =>
         set((s) => {
           const byId = new Map(passages.map((p) => [p.id, p]))

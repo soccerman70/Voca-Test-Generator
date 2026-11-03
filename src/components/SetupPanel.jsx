@@ -6,6 +6,7 @@ import { readWordbook } from '../lib/importXlsx.js'
 import { checkHealth } from '../lib/aiClient.js'
 import { useStore, DOC_TITLE_MAX } from '../store.js'
 import WorkflowBanner from './WorkflowBanner.jsx'
+import ImportNotes from './ImportNotes.jsx'
 
 const SPLIT_LABEL = {
   marker: '지문 번호 표시를 기준으로 나눴습니다',
@@ -299,20 +300,7 @@ export default function SetupPanel() {
                 </p>
               )}
 
-              {imported.warnings.metaMissing && (
-                <p className="hint">
-                  형태 정보가 없는 예전 파일입니다. 출처 문장에서 되짚어
-                  <strong> {imported.warnings.recovered.length}개</strong>를 찾았습니다.
-                </p>
-              )}
-
-              {imported.warnings.failed.length > 0 && (
-                <div className="notice-box">
-                  <strong>{imported.warnings.failed.length}개</strong>는 지문에 나온 형태를 찾지 못해 표제어를 그대로
-                  씁니다 — PART IV 의 형태 다양성이 그만큼 줄어듭니다.
-                  <div className="import-failed">{imported.warnings.failed.join(' · ')}</div>
-                </div>
-              )}
+              <ImportNotes warnings={imported.warnings} />
 
               <div className="import-actions">
                 <button className="btn primary" onClick={applyWordbook}>

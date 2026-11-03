@@ -7,6 +7,7 @@ import {
   META_SHEET,
   PASSAGE_SHEET,
   DEFAULT_TITLE,
+  toRowObjects,
 } from './exportXlsx.js'
 import { inflectionKey } from './duplicates.js'
 import { tokenize, isPhrase } from './tokenize.js'
@@ -149,6 +150,61 @@ function numericSource(source) {
   return /^\d+$/.test(String(source).trim()) ? Number(source) : undefined
 }
 
+/** 공백을 한 칸으로 — 지문의 줄바꿈이 문장·셀을 거치며 달라져도 같은 글로 본다. */
+const squash = (s) => String(s || '').replace(/\s+/g, ' ').trim()
+
+/**
+ * 보이는 시트의 줄마다 _meta 의 줄을 하나씩 짝짓는다.
+ *
+ * 번호 칸만 믿으면 안 된다. 선생님이 엑셀에서 줄을 지우고 번호를 다시 매기거나, 새 줄을 끼워 넣으면
+ * 번호가 가리키는 _meta 는 다른 표제어의 것이 된다. 그대로 쓰면 다른 줄의 surface 가 정답으로
+ * 들어간다 — 에러 없이 시험지 정답만 틀린다.
+ *
+ * 그래서 _meta 의 surface 가 그 줄의 출처 문장 안에 실제로 있어야만 짝으로 인정한다.
+ * 한 문장에서 표제어를 여럿 고른 경우 후보가 여럿이므로 점수로 확실한 짝부터 묶는다.
+ *   표제어와 surface 의 굴절 열쇠가 같다(묵음 e 포함) +2, 번호가 같다 +1
+ * 문장만 맞는 후보(0점)는 그 줄에 남은 후보가 하나뿐일 때만 받는다.
+ *
+ * @returns 보이는 줄과 같은 순서의 _meta 줄. 짝이 없으면 null.
+ */
+function matchMeta(visible, metaRows) {
+  const metaKeys = metaRows.map((m) => inflectionKey(m.surface))
+  const pairs = []
+  visible.forEach((v, i) => {
+    const sentence = squash(v.sentence)
+    const key = inflectionKey(v.headword)
+    const roots = new Set([key, key && silentEKey(key)].filter(Boolean))
+    metaRows.forEach((m, j) => {
+      const surface = squash(m.surface)
+      if (!surface || !findWholeWord(sentence, surface)) return
+      const score = (roots.has(metaKeys[j]) ? 2 : 0) + (String(m.no) === v.no ? 1 : 0)
+      pairs.push({ i, j, score })
+    })
+  })
+
+  const matched = visible.map(() => null)
+  const taken = new Set()
+  const take = ({ i, j }) => {
+    matched[i] = metaRows[j]
+    taken.add(j)
+  }
+
+  // 점수가 같으면 위쪽 줄이 먼저 가져간다
+  pairs
+    .filter((p) => p.score > 0)
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .forEach((p) => {
+      if (!matched[p.i] && !taken.has(p.j)) take(p)
+    })
+
+  visible.forEach((_, i) => {
+    if (matched[i]) return
+    const left = pairs.filter((p) => p.i === i && !taken.has(p.j))
+    if (left.length === 1) take(left[0])
+  })
+  return matched
+}
+
 /**
  * 워크북 → 앱 상태. 브라우저 API 를 쓰지 않아 Node 에서도 검증할 수 있다.
  *
@@ -173,15 +229,7 @@ export function parseWorkbook(wb) {
     colOf[c.key] = i + 1
   })
 
-  const metaWs = wb.getWorksheet(META_SHEET)
-  const meta = new Map()
-  if (metaWs) for (const m of sheetTable(metaWs)) meta.set(String(m.no), m)
-
-  const rows = []
-  const usedIds = new Set()
-  const recovered = []
-  const failed = []
-
+  const visible = []
   for (let r = 3; r <= ws.rowCount; r += 1) {
     const row = ws.getRow(r)
     const get = (key) => cellText(row.getCell(colOf[key])).trim()
@@ -192,49 +240,85 @@ export function parseWorkbook(wb) {
     // 표제어도 뜻도 문장도 없으면 빈 줄이다
     if (!headword && !meaning && !sentence) continue
 
-    const source = get('source')
-    const m = meta.get(get('no'))
+    visible.push({
+      no: get('no'),
+      headword,
+      pos: get('pos'),
+      meaning,
+      derivatives: cellText(row.getCell(colOf.derivatives)),
+      synonyms: get('synonyms'),
+      antonyms: get('antonyms'),
+      source: get('source'),
+      sentence,
+    })
+  }
+
+  if (!visible.length) throw new Error('단어장에 표제어가 하나도 없습니다.')
+
+  const metaWs = wb.getWorksheet(META_SHEET)
+  const metaFor = metaWs ? matchMeta(visible, sheetTable(metaWs)) : visible.map(() => null)
+
+  // 짝지은 _meta 의 id 는 살린다 — 지금 표와 견줄 때 같은 줄로 알아보는 열쇠다.
+  // 새 id 가 뒤쪽 줄의 id 와 부딪치지 않도록 미리 다 잡아 둔다.
+  const reserved = new Set(metaFor.map((m) => String(m?.id || '').trim()).filter(Boolean))
+  const usedIds = new Set()
+  let seq = 0
+  const freshId = () => {
+    let id
+    do {
+      seq += 1
+      id = `imp${seq}`
+    } while (reserved.has(id) || usedIds.has(id))
+    return id
+  }
+
+  const rows = []
+  const unmatched = []
+  const recovered = []
+  const failed = []
+
+  visible.forEach((v, i) => {
+    const m = metaFor[i]
+    if (metaWs && !m) unmatched.push(v.headword)
 
     let surface = String(m?.surface || '').trim()
     if (!surface) {
-      const found = recoverSurface(headword, sentence)
+      const found = recoverSurface(v.headword, v.sentence)
       if (found) {
         surface = found
-        recovered.push(headword)
+        recovered.push(v.headword)
       } else {
-        surface = headword
-        failed.push(headword)
+        surface = v.headword
+        failed.push(v.headword)
       }
     }
 
     let id = String(m?.id || '').trim()
-    if (!id || usedIds.has(id)) id = `imp${rows.length + 1}`
+    if (!id || usedIds.has(id)) id = freshId()
     usedIds.add(id)
 
     const passageNo = m?.passageNo === undefined || m.passageNo === ''
-      ? numericSource(source)
+      ? numericSource(v.source)
       : Number(m.passageNo)
 
     rows.push({
       id,
-      headword,
-      pos: get('pos'),
-      meaning,
-      derivatives: parseDerivatives(cellText(row.getCell(colOf.derivatives))),
-      synonyms: parseWords(get('synonyms')),
+      headword: v.headword,
+      pos: v.pos,
+      meaning: v.meaning,
+      derivatives: parseDerivatives(v.derivatives),
+      synonyms: parseWords(v.synonyms),
       // confidence 는 생성 단계에서만 읽히므로 담지 않았다. 개수만 맞으면 배정에 지장이 없다.
-      antonyms: parseWords(get('antonyms')).map((a) => ({ ...a, confidence: 0 })),
-      sentence,
+      antonyms: parseWords(v.antonyms).map((a) => ({ ...a, confidence: 0 })),
+      sentence: v.sentence,
       surface,
       passageNo,
-      passageLabel: String(m?.passageLabel || '').trim() || source,
+      passageLabel: String(m?.passageLabel || '').trim() || v.source,
       properNoun: toBool(m?.properNoun),
       normalizationNote: String(m?.normalizationNote || '').trim(),
       missing: toBool(m?.missing),
     })
-  }
-
-  if (!rows.length) throw new Error('단어장에 표제어가 하나도 없습니다.')
+  })
 
   const passageWs = wb.getWorksheet(PASSAGE_SHEET)
   const passages = passageWs
@@ -255,8 +339,45 @@ export function parseWorkbook(wb) {
     rows,
     passages,
     docTitle,
-    warnings: { metaMissing: !metaWs, recovered, failed },
+    warnings: { metaMissing: !metaWs, unmatched, recovered, failed },
   }
+}
+
+/**
+ * 불러온 단어장이 지금 작업과 같은 지문에서 나왔는지.
+ *
+ * 출처 문장이 지금 지문 안에 그대로 있는지로 본다. 줄을 지우거나 번호를 바꿔도, 숨김 시트가 없는
+ * 옛 파일이어도 흔들리지 않는다. 엑셀에서 문장을 손본 줄이 있을 수 있어 절반 이상이면 같다고 본다.
+ */
+export function isSameWork(rows, passages) {
+  const text = (passages || []).map((p) => squash(p.english)).join('\n')
+  const sentences = rows.map((r) => squash(r.sentence)).filter(Boolean)
+  if (!text || !sentences.length) return false
+  const found = sentences.filter((s) => text.includes(s)).length
+  return found * 2 >= sentences.length
+}
+
+/**
+ * 엑셀 시트에 보이는 칸만으로 만든 열쇠. 왕복에서 담지 않는 값(confidence 등)은 견주지 않는다.
+ * 번호 칸은 줄 하나만 넘기므로 언제나 1이다 — 순서가 바뀐 것은 고친 것으로 치지 않는다.
+ */
+const visibleKey = (row) => JSON.stringify(toRowObjects([row])[0])
+
+/**
+ * 지금 표와 불러온 표의 차이. 같은 줄은 id 로 알아본다 (_meta 에 담겨 왕복한다).
+ * @returns {{changed, added, removed}}
+ */
+export function compareRows(before, after) {
+  const prev = new Map(before.map((r) => [r.id, visibleKey(r)]))
+  let changed = 0
+  let added = 0
+  for (const r of after) {
+    if (!prev.has(r.id)) added += 1
+    else if (prev.get(r.id) !== visibleKey(r)) changed += 1
+  }
+  const ids = new Set(after.map((r) => r.id))
+  const removed = before.filter((r) => !ids.has(r.id)).length
+  return { changed, added, removed }
 }
 
 /** 브라우저에서 고른 파일 → 앱 상태 */

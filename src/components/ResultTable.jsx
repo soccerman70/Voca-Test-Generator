@@ -1,13 +1,38 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store.js'
 import { downloadXlsx, formatDerivatives, formatWords } from '../lib/exportXlsx.js'
+import { readWordbook, isSameWork, compareRows } from '../lib/importXlsx.js'
 import { filesLabel } from '../lib/passages.js'
+import ImportNotes from './ImportNotes.jsx'
 
 export default function ResultTable() {
-  const { rows, antonymStats, lastUsage, model, sourceFiles, passages, docTitle, confirmedAt, setStep, updateRow, removeRow } =
-    useStore()
+  const {
+    rows,
+    antonymStats,
+    lastUsage,
+    model,
+    sourceFiles,
+    passages,
+    docTitle,
+    confirmedAt,
+    setStep,
+    updateRow,
+    removeRow,
+    replaceWordbook,
+  } = useStore()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // 엑셀에서 고친 단어장. 바로 바꾸지 않고 무엇이 달라지는지 먼저 보여준다.
+  const [imported, setImported] = useState(null)
+  const [reading, setReading] = useState(false)
+  const [appliedName, setAppliedName] = useState('')
+  const fileRef = useRef(null)
+
+  // 패널을 띄운 채 표를 더 고칠 수도 있으므로 지금 표와 매번 다시 견준다
+  const diff = useMemo(
+    () => (imported?.sameWork ? compareRows(rows, imported.rows) : null),
+    [imported, rows]
+  )
 
   const issues = useMemo(
     () => ({
@@ -32,6 +57,33 @@ export default function ResultTable() {
     }
   }
 
+  const handleImport = async (file) => {
+    if (!file) return
+    setError('')
+    setImported(null)
+    setAppliedName('')
+    setReading(true)
+    try {
+      const parsed = await readWordbook(file)
+      setImported({ name: file.name, ...parsed, sameWork: isSameWork(parsed.rows, passages) })
+    } catch (err) {
+      setError(`엑셀 불러오기 실패: ${err.message}`)
+    } finally {
+      setReading(false)
+    }
+  }
+
+  const applyImport = () => {
+    replaceWordbook({
+      rows: imported.rows,
+      passages: imported.passages,
+      docTitle: imported.docTitle,
+      sameWork: imported.sameWork,
+    })
+    setAppliedName(imported.name)
+    setImported(null)
+  }
+
   return (
     <div className="result-view">
       <div className="result-toolbar">
@@ -49,18 +101,71 @@ export default function ResultTable() {
         {issues.noSynonym > 0 && <span className="hint">유의어 없음 {issues.noSynonym}개</span>}
         {issues.changed > 0 && <span className="hint">원형으로 바뀐 표제어 {issues.changed}개</span>}
         {confirmedAt && <span className="confirm-tag">확정됨 {formatStamp(confirmedAt)}</span>}
+        {appliedName && <span className="hint">{appliedName} 반영됨</span>}
         <span className="grow" />
         {lastUsage && (
           <span className="hint">
             {model} · {Math.round(lastUsage.durationMs / 1000)}초
           </span>
         )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".xlsx"
+          hidden
+          onChange={(e) => {
+            handleImport(e.target.files?.[0])
+            e.target.value = ''
+          }}
+        />
+        <button
+          className="btn"
+          onClick={() => fileRef.current?.click()}
+          disabled={reading}
+          title="내려받은 엑셀을 고친 뒤 다시 올리면 그 내용으로 표를 바꿉니다"
+        >
+          {reading ? <span className="spinner dark" /> : '⬆'} 고친 엑셀 불러오기
+        </button>
         <button className="btn primary" onClick={handleDownload} disabled={saving || !rows.length}>
           {saving ? <span className="spinner" /> : '⬇'} 엑셀(XLSX) 다운로드
         </button>
       </div>
 
       {error && <div className="error-box">{error}</div>}
+
+      {imported && (
+        <div className="panel">
+          <div className="panel-title">
+            고친 엑셀 불러오기
+            <span className="count-pill">표제어 {imported.rows.length}개</span>
+          </div>
+          <div className="import-body">
+            <p className="hint">
+              {imported.name} · 지금 표 {rows.length}개 → {imported.rows.length}개
+              {diff && ` · ${diffText(diff)}`}
+            </p>
+
+            {!imported.sameWork && (
+              <div className="notice-box">
+                지금 작업과 <strong>다른 지문</strong>에서 나온 단어장입니다. 표와 함께 지문도 이 파일의 것으로 바뀌고,
+                2단계의 표제어 선택은 비워집니다.
+                {!imported.passages.length && ' 이 파일에는 지문이 없어 PART IV 는 출처 문장 하나만 씁니다.'}
+              </div>
+            )}
+
+            <ImportNotes warnings={imported.warnings} />
+
+            <div className="import-actions">
+              <button className="btn primary" onClick={applyImport}>
+                이 내용으로 표 바꾸기
+              </button>
+              <button className="btn ghost" onClick={() => setImported(null)}>
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {issues.missing > 0 && (
         <div className="notice-box">
           AI 응답에서 {issues.missing}개 항목이 누락되어 원래 선택 그대로 채웠습니다 (아래 노란 줄). 해당 줄만 직접
@@ -175,6 +280,14 @@ function AutoCell({ value, onChange, placeholder, className = '' }) {
       placeholder={placeholder}
     />
   )
+}
+
+function diffText({ changed, added, removed }) {
+  const parts = []
+  if (changed) parts.push(`고친 줄 ${changed}개`)
+  if (added) parts.push(`새 줄 ${added}개`)
+  if (removed) parts.push(`지운 줄 ${removed}개`)
+  return parts.length ? parts.join(' · ') : '지금 표와 내용이 같습니다'
 }
 
 function formatStamp(ms) {

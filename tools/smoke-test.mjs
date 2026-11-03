@@ -245,5 +245,75 @@ let headerMsg = ''
 try { await reload(wrongHeader) } catch (e) { headerMsg = e.message }
 check('열 구성이 다르면 거절', headerMsg.includes('열 구성'), headerMsg.slice(0, 22))
 
+/* 9. 고친 엑셀 다시 불러오기 (3단계) ----------------------------- */
+console.log('\n[9] 고친 엑셀 다시 불러오기')
+const { isSameWork, compareRows } = await import('../src/lib/importXlsx.js')
+
+const editRows = [
+  ...sampleRows,
+  {
+    id: 'r3', passageNo: 1, surface: 'occurs', sentence: sents[2],
+    headword: 'occur', normalizationNote: '3인칭 현재', pos: '동', meaning: '일어나다',
+    derivatives: [{ word: 'occurrence', pos: '명' }], synonyms: [{ word: 'happen' }], antonyms: [],
+  },
+  {
+    id: 'r4', passageNo: 1, surface: 'achieving', sentence: sents[3],
+    headword: 'achieve', normalizationNote: '동명사', pos: '동', meaning: '이루다',
+    derivatives: [], synonyms: [{ word: 'attain' }], antonyms: [],
+  },
+]
+const exported = () => buildWorkbook(editRows, { title: '고침 점검', passages: samplePassages })
+const sheetOf = (w) => w.getWorksheet('심화단어장')
+const cellAt = (w, r, key) => sheetOf(w).getRow(r).getCell(col(key))
+const surfaces = (parsed) => parsed.rows.map((r) => r.surface).join('|')
+const diffOf = (parsed) => JSON.stringify(compareRows(editRows, parsed.rows))
+
+const untouched = await reload(exported())
+check('그대로면 차이 없음', diffOf(untouched) === '{"changed":0,"added":0,"removed":0}', diffOf(untouched))
+check('같은 지문의 단어장', isSameWork(untouched.rows, samplePassages))
+
+const otherPassages = [{ id: 'q1', no: 1, label: '1', english: passages[1].english }]
+check('다른 지문이면 다른 작업', !isSameWork(untouched.rows, otherPassages))
+check('지문 없는 파일도 문장으로 알아본다', isSameWork(noTitle.rows, samplePassages))
+
+// 엑셀에서 뜻 한 칸을 고쳤다
+const w1 = exported()
+cellAt(w1, 5, 'meaning').value = '발생하다'
+const edited = await reload(w1)
+check('고친 칸을 읽는다', edited.rows[2].meaning === '발생하다', edited.rows[2].meaning)
+check('고친 줄 1개', diffOf(edited) === '{"changed":1,"added":0,"removed":0}', diffOf(edited))
+
+// 첫 줄을 지우고 번호를 1부터 다시 매겼다 — 번호 1 의 _meta 는 지운 줄(immersed)의 것이고,
+// 그 surface 는 새 1번 줄의 문장에도 들어 있다. 번호만 믿으면 정답이 immersed 로 바뀐다.
+const w2 = exported()
+sheetOf(w2).spliceRows(3, 1)
+for (let k = 0; k < 3; k += 1) cellAt(w2, 3 + k, 'no').value = k + 1
+const renumbered = await reload(w2)
+check('번호를 다시 매겨도 형태가 제자리', surfaces(renumbered) === 'lose track of time|occurs|achieving',
+  surfaces(renumbered))
+check('번호를 다시 매겨도 id 가 제자리', renumbered.rows.map((r) => r.id).join(',') === 'r2,r3,r4',
+  renumbered.rows.map((r) => r.id).join(','))
+check('지운 줄 1개', diffOf(renumbered) === '{"changed":0,"added":0,"removed":1}', diffOf(renumbered))
+check('짝 못 찾은 줄 없음', renumbered.warnings.unmatched.length === 0, JSON.stringify(renumbered.warnings.unmatched))
+
+// 같은 문장에서 고른 두 줄의 번호를 맞바꿨다 — 표제어로 가려야 한다 (immerse ↔ immersed 는 묵음 e)
+const w3 = exported()
+cellAt(w3, 3, 'no').value = 2
+cellAt(w3, 4, 'no').value = 1
+const swapped = await reload(w3)
+check('같은 문장의 두 줄도 표제어로 가려 잇는다',
+  surfaces(swapped) === 'immersed|lose track of time|occurs|achieving', surfaces(swapped))
+
+// 다른 문장으로 새 줄을 끼워 넣고 번호는 윗줄 것을 베꼈다
+const w4 = exported()
+sheetOf(w4).spliceRows(5, 0, ['2', 'urbanization', '명', '도시화', '', 'city growth', '', '2', passages[1].english.split('. ')[0] + '.'])
+const inserted = await reload(w4)
+check('새 줄은 다른 줄의 형태를 가져가지 않는다', inserted.rows[2].surface === 'Urbanization', inserted.rows[2].surface)
+check('새 줄은 새 id', !editRows.some((r) => r.id === inserted.rows[2].id), inserted.rows[2].id)
+check('윗줄은 제 형태 그대로', inserted.rows[1].surface === 'lose track of time', inserted.rows[1].surface)
+check('새 줄 1개', diffOf(inserted) === '{"changed":0,"added":1,"removed":0}', diffOf(inserted))
+check('새 줄을 알린다', inserted.warnings.unmatched.join(',') === 'urbanization', JSON.stringify(inserted.warnings.unmatched))
+check('새 줄이 있어도 같은 작업', isSameWork(inserted.rows, samplePassages))
+
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)
