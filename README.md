@@ -69,11 +69,13 @@ npm run dev
 - 맨 오른쪽 메타 패널: 단어/어구 비율, 품사별 개수(접미사 기반 추정), 지문별 분포.
 - **✨ AI 자동 추출** 버튼을 누르면 남은 개수만큼 AI가 골라 회색으로 표시한다. 직접 고른 것은 그대로 유지된다.
 
-> **개수는 코드가 보장한다.** AI는 요청한 개수를 정확히 맞춰주지 않는다 — 50개를 요청하면 62개를 주기도 하고
-> 46개만 주기도 한다. 그래서 [Workspace.jsx](src/components/Workspace.jsx) 에서 넘치면 잘라내고, 부족하면
-> 이미 고른 표현을 제외 목록으로 넘겨 최대 3회까지 다시 요청한다. 그래도 못 채우면 몇 개를 채웠는지와
-> 그 이유(초과분 잘라냄 / 지문에서 못 찾음 / 자리 겹침)를 화면에 그대로 알린다.
-> `node tools/select-diagnose.mjs <포트> <개수>` 로 이 동작을 점검할 수 있다.
+> **개수와 분배는 코드가 정한다.** 지문 분량(단어 수)에 비례해 지문별 목표를 먼저 나누고, 지문을 3개씩 묶어
+> 동시에 묻는다. 각 묶음에는 목표의 1.5배를 요청해 난이도(1~5)와 함께 받는다. 최종 선별은
+> [selectPlan.js](src/lib/selectPlan.js) 가 한다 — 지문마다 자기 몫을 난이도 높은 순으로 채운 뒤,
+> 남은 자리를 지문 구분 없이 난이도 높은 순으로 채운다. 자리 겹침·굴절형 중복은 이 단계에서 거른다.
+> 몫을 못 채운 지문에만 최대 3회까지 다시 묻고, 그래도 모자라면 몇 개를 채웠는지와 그 이유
+> (지문에서 못 찾음 / 자리 겹침 / 중복 / 지문 번호 불일치)를 화면에 그대로 알린다.
+> `node tools/select-diagnose.mjs <포트> <개수> [지문파일]` 로 이 동작을 점검할 수 있다.
 
 ### 3단계 — 단어장 생성
 
@@ -94,12 +96,31 @@ npm run dev
 | **고유명사** | AI 자동 추출에서는 인명·지명·기관명을 **되도록 고르지 않는다**. 꼭 필요해 표제어가 된 경우에는 `properNoun` 으로 표시되어 대문자 표기가 유지된다 |
 
 결과 테이블에서 셀을 직접 고친 뒤 **XLSX**로 내려받는다. 출처(지문 번호)와 출처 문장이 함께 들어간다.
+보이지 않는 시트에 지문 원문과 왕복용 정보(`surface` 등)도 담겨, 나중에 그 파일을 다시 불러올 수 있다.
+
+### 4단계 — 단어시험지 생성
+
+헤더의 **④ 단어시험지 생성**을 누르면 단어장이 확정되고 시험지 화면으로 넘어간다.
+표제어를 6개 PART(35문항)에 나눠 담은 배정 결과를 먼저 보여주고, **문항 만들기**를 누르면
+PART I·IV 는 단어장만으로 조립하고 II·III·V·VI 는 AI 가 동시에 만든다.
+결과는 **시험지**와 **정답·해설지** 두 개의 `.docx` 로 내려받는다. 시험지 제목은 1단계에서 정한 단어장 제목(최대 30자)이다.
+
+PART 구성과 출제 규칙은 [quiz-spec.md](quiz-spec.md), 정본 양식은 [public/vocabulary_test_sample.pdf](public/vocabulary_test_sample.pdf).
+
+### 만들어 둔 단어장으로 시험지만 만들기
+
+1단계 화면의 **단어장 불러와서 시험지 만들기**로 이 앱이 내보낸 XLSX 를 열면 ①②③ 을 건너뛰고 ④ 로 간다.
+불러온 내용을 확인 패널에서 한 번 보여주고, 기존 작업이 있으면 넘어가기 전에 덮어쓸지 묻는다.
+
+- 다른 엑셀 파일은 거절한다 (`심화단어장` 시트와 9열 머리글을 본다).
+- 숨김 시트가 없는 옛 파일은 출처 문장에서 표제어 형태를 거꾸로 찾아 살린다. 불규칙 변화(`buy`/`bought`)처럼 못 찾은 개수는 화면에 알린다.
+- 지문이 들어 있지 않은 파일이면 PART IV 는 출처 문장 하나만 쓴다.
 
 ---
 
 ## 디자인
 
-`DESIGN-coinbase.md` 의 토큰을 [src/styles/global.css](src/styles/global.css) 하나에 CSS 변수로 옮겨 적용했다.
+`DESIGN-coinbase.md`(저장소 밖 문서)의 토큰을 [src/styles/global.css](src/styles/global.css) 하나에 CSS 변수로 옮겨 적용했다.
 
 - **색**: 흰 캔버스 + ink(`#0a0b0d`) + 회색 elevation. 브랜드 블루(`#0052ff`)는 주 CTA·활성 단계·표제어 선택 표시에만 쓴다.
 - **서체**: 라이선스 서체 대신 문서가 지정한 대체 서체를 자체 호스팅(`@fontsource-variable`) — 본문 Inter, 숫자 JetBrains Mono.
@@ -120,22 +141,34 @@ npm run dev
 server/
   claudeBridge.js   Vite 미들웨어. /api/ai/* 요청을 claude -p 자식 프로세스로 넘긴다
   prompts.js        표제어 추출 · 정규화/생성 프롬프트
+  quizPrompts.js    시험지 PART II · III · V · VI 프롬프트
 src/
   lib/
     textExtract.js  docx(mammoth) · pdf(pdf.js) · txt → 평문
     passages.js     지문 분할, 한글 해석 분리, 문장 분리
     tokenize.js     단어 토큰화, 드래그 구간 → 문자열, AI 응답 문자열 → 지문 위치
     posLite.js      접미사 기반 간이 품사 추정, 메타 집계
-    aiClient.js     /api/ai 호출, 배치 처리, 반의어 비율 조정
-    exportXlsx.js   ExcelJS 내보내기
-  components/       SetupPanel · Workspace · PassageCard · SelectionPanel · MetaPanel · GenerateModal · ResultTable
+    duplicates.js   표제어 중복(굴절형) · 파생형 의심 탐지
+    aiClient.js     /api/ai 호출, 지문별 쿼터 · 묶음 병렬 호출, 배치 처리, 반의어 비율 조정
+    selectPlan.js   자동 추출 후보에서 최종 표제어를 고르는 규칙 (화면 · 점검 도구 공용)
+    exportXlsx.js   ExcelJS 내보내기 (왕복용 숨김 시트 포함)
+    importXlsx.js   내보낸 XLSX 를 rows · passages 로 되읽기
+    quizAllocate.js 시험지 6개 PART 에 표제어 배정
+    quizBuild.js    AI 없이 조립하는 PART I · IV
+    quizClient.js   PART II · III · V · VI 동시 생성과 결과 검사
+    exportDocx.js   시험지 · 정답해설지 docx 내보내기
+  components/       SetupPanel · WorkflowBanner · Workspace · PassageCard · SelectionPanel · MetaPanel · GenerateModal · ResultTable · QuizPanel
   store.js          zustand 전역 상태 (localStorage 보존)
 tools/
   make-sample-docx.mjs  테스트용 샘플 지문 docx 생성
-  smoke-test.mjs        브라우저 없이 핵심 로직 점검 (파싱·선택·XLSX)
+  smoke-test.mjs        브라우저 없이 핵심 로직 점검 (파싱·선택·XLSX·불러오기)
   ai-test.mjs           실제 AI 엔드포인트 · 정규화 규칙 점검
-  select-diagnose.mjs   자동 추출이 목표 개수를 정확히 채우는지 점검
+  select-diagnose.mjs   자동 추출이 목표 개수를 채우고 지문 전체에 고르게 퍼지는지 점검
+  bench-enrich.mjs      생성 배치를 병렬로 돌릴 값어치가 있는지 재는 벤치
   seed-preview.mjs      2·3단계 화면 확인용 상태를 localStorage에 심는 임시 페이지 생성
+samples/
+  샘플지문.docx         지문 4개 (make-sample-docx.mjs 가 만든다)
+  테스트지문18.txt      지문 18개 — 자동 추출의 지문별 분배 점검용
 ```
 
 작업 내용은 localStorage에 보존되므로 새로고침해도 선택한 표제어가 남는다. 헤더의 **초기화**로 지운다.
@@ -144,8 +177,9 @@ tools/
 
 ```bash
 node tools/make-sample-docx.mjs   # samples/샘플지문.docx 생성
-node tools/smoke-test.mjs         # 파싱·분할·토큰화·품사 추정·XLSX (AI 호출 없음)
+node tools/smoke-test.mjs         # 파싱·분할·토큰화·품사 추정·XLSX·불러오기 (AI 호출 없음)
 node tools/ai-test.mjs 5180       # 실제 AI 호출 (dev 서버 포트를 인자로)
+node tools/select-diagnose.mjs 5180 100 samples/테스트지문18.txt   # 자동 추출 개수·분배 (AI 호출)
 
 node tools/seed-preview.mjs select   # 2단계 화면 상태 심기 → /__seed.html 접속
 node tools/seed-preview.mjs result   # 3단계 화면 상태 심기 → /__seed.html 접속
