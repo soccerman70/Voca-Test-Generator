@@ -51,6 +51,8 @@ npm run dev
 - **.docx** (권장): 지문별로 영어 본문만 뽑아내고 한글 해석은 걸러낸다.
 - **.pdf**: 텍스트로 변환한 결과를 먼저 보여준다. 직접 고친 뒤 지문으로 넘기거나 `.txt`로 저장할 수 있다.
 - **.txt**: 그대로 사용.
+- **구글 링크**: 드롭존의 **구글 링크로 불러오기**에 구글 문서 링크나, 구글 드라이브에 올린 .docx · .pdf · .txt 파일 링크를 붙여넣는다.
+  공유 설정이 **링크가 있는 모든 사용자**여야 한다. 구글 문서는 docx 로 받아 위와 똑같이 처리한다.
 
 지문 분할 기준은 두 가지다.
 
@@ -151,6 +153,7 @@ server/
   claudeBridge.js   Vite 미들웨어. /api/ai/* 요청을 claude -p 자식 프로세스로 넘긴다
   prompts.js        표제어 추출 · 정규화/생성 프롬프트
   quizPrompts.js    시험지 PART II · III · V · VI 프롬프트
+  googleLink.js     Vite 미들웨어. /api/google 로 구글 문서 · 드라이브 공개 링크의 파일을 대신 받아온다
 src/
   lib/
     textExtract.js  docx(mammoth) · pdf(pdf.js) · txt → 평문

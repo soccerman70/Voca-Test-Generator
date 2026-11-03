@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { claudeBridge } from './server/claudeBridge.js'
+import { googleLink } from './server/googleLink.js'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), claudeBridge()],
+  plugins: [react(), claudeBridge(), googleLink()],
   server: {
     port: 5180,
     strictPort: false,

@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises'
 import { splitPassages, splitSentences, sentenceAt } from '../src/lib/passages.js'
 import { tokenize, surfaceOf, locateSurface } from '../src/lib/tokenize.js'
 import { guessPos, guessLevel, summarize } from '../src/lib/posLite.js'
+import { parseGoogleLink, fileNameFrom, fileNameFor } from '../server/googleLink.js'
 
 let failures = 0
 const check = (label, cond, detail = '') => {
@@ -314,6 +315,35 @@ check('윗줄은 제 형태 그대로', inserted.rows[1].surface === 'lose track
 check('새 줄 1개', diffOf(inserted) === '{"changed":0,"added":1,"removed":0}', diffOf(inserted))
 check('새 줄을 알린다', inserted.warnings.unmatched.join(',') === 'urbanization', JSON.stringify(inserted.warnings.unmatched))
 check('새 줄이 있어도 같은 작업', isSameWork(inserted.rows, samplePassages))
+
+/* 10. 구글 링크 해석 ------------------------------------------- */
+console.log('\n[10] 구글 링크 해석')
+const DOC_ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdEF'
+const FILE_ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456'
+const linkOf = (url) => JSON.stringify(parseGoogleLink(url))
+const docLink = JSON.stringify({ kind: 'doc', id: DOC_ID })
+const fileLink = JSON.stringify({ kind: 'file', id: FILE_ID })
+
+check('구글 문서 편집 링크', linkOf(`https://docs.google.com/document/d/${DOC_ID}/edit?usp=sharing`) === docLink)
+check('구글 문서 — 계정 번호 붙은 링크', linkOf(`https://docs.google.com/document/u/1/d/${DOC_ID}/edit`) === docLink)
+check('구글 문서 — 앞뒤 공백', linkOf(`  https://docs.google.com/document/d/${DOC_ID}  `) === docLink)
+check('드라이브 파일 보기 링크', linkOf(`https://drive.google.com/file/d/${FILE_ID}/view?usp=sharing`) === fileLink)
+check('드라이브 open?id=', linkOf(`https://drive.google.com/open?id=${FILE_ID}`) === fileLink)
+check('드라이브 uc?id=', linkOf(`https://drive.google.com/uc?id=${FILE_ID}&export=download`) === fileLink)
+check('시트는 거절', parseGoogleLink(`https://docs.google.com/spreadsheets/d/${DOC_ID}/edit`) === null)
+check('슬라이드는 거절', parseGoogleLink(`https://docs.google.com/presentation/d/${DOC_ID}/edit`) === null)
+check("'웹에 게시' 링크는 거절", parseGoogleLink('https://docs.google.com/document/d/e/2PACX-1vT/pub') === null)
+check('남의 주소는 거절', parseGoogleLink(`https://example.com/document/d/${DOC_ID}`) === null)
+check('id 에 섞인 이상한 문자는 거절', parseGoogleLink('https://drive.google.com/open?id=abc/../../etc') === null)
+check('주소가 아니면 거절', parseGoogleLink('그냥 글자') === null)
+
+check('한글 파일 이름 (filename*)',
+  fileNameFrom(`attachment; filename="____.docx"; filename*=UTF-8''${encodeURIComponent('11강 지문.docx')}`) === '11강 지문.docx')
+check('filename= 만 있을 때', fileNameFrom('attachment; filename="passages.txt"') === 'passages.txt')
+check('이름이 없으면 빈 문자열', fileNameFrom('') === '')
+check('확장자 없는 이름은 형식에서 붙인다', fileNameFor('file', 'attachment; filename="지문"', 'text/plain; charset=utf-8') === '지문.txt')
+check('이름 없는 구글 문서', fileNameFor('doc', '', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') === '구글 문서.docx')
+check('확장자 있으면 그대로', fileNameFor('file', 'attachment; filename="a.PDF"', 'application/octet-stream') === 'a.PDF')
 
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)
