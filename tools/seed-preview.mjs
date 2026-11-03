@@ -77,7 +77,7 @@ const state = {
   state: {
     step: ['input', 'select', 'result'].includes(MODE) ? MODE : 'select',
     fileInfo: { name: '샘플지문.docx', kind: 'docx' }, rawText: text,
-    passages, splitMethod: method, targetCount: 20, mode: 'manual', model: 'claude-opus-5',
+    passages, splitMethod: method, targetCount: 20, mode: 'manual', model: 'claude-opus-5-5',
     focusedId: passages[0].id, selections,
     rows: MODE === 'result' ? rows : [],
     antonymStats: MODE === 'result'

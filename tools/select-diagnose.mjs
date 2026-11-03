@@ -23,7 +23,7 @@ const { passages } = splitPassages(text)
 
 /** 화면과 똑같이 autoSelect 를 부른다 — 묶음 쪼개기·초과 표집까지 실제 경로 그대로다. */
 async function request({ passages: ps, quotas, exclude }) {
-  const { items } = await autoSelect({ passages: ps, quotas, exclude, model: 'claude-opus-5' })
+  const { items } = await autoSelect({ passages: ps, quotas, exclude, model: 'claude-opus-5-5' })
   return items
 }
 

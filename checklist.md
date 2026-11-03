@@ -196,3 +196,29 @@
       → 검증: 패널 "고친 줄 1개 · 지운 줄 1개", 15→14줄, 새 2번 줄 강조가 `effortless`, ④ 배정 정상, 콘솔 에러 없음
 - [x] lint · 빌드 · 스모크 테스트 통과
 - [ ] "다른 지문" 경로는 스모크 테스트로만 확인 — 화면 구동은 같은 작업 경로만 했다
+
+---
+
+# AI 모델 Opus 5.5 · effort 설정 (2026-11-04)
+
+유의어 · 반의어 · 파생어 품질을 올리려고 모델을 한 세대 올리고, 답하기 전에 생각할 여유(effort)를 준다.
+
+## 결정 사항
+
+- 기본 모델 **Opus 5.5**. 고를 수 있는 것은 Opus 5.5 · Sonnet 5.5 둘이다. 5 세대는 뺀다.
+- effort 기본값 **medium**. low · medium · high · xhigh · max 중에서 고른다.
+- 두 설정 모두 1단계 **단어장 설정 패널**에 둔다. 자동 추출 · 단어장 생성 · 시험지 문항 생성에 함께 쓰인다.
+- Opus 5.5 는 Claude Code CLI **2.1.280 이상**이 필요하다. 이 PC 는 2.1.214 → 2.1.317 로 올렸다.
+
+## 작업
+
+- [x] `claudeBridge.js` — 허용 모델 교체, `--effort` 인자(허용 목록으로 막음), 세 라우트에 effort 전달, 로그에 모델 · effort
+- [x] `aiClient.js` · `quizClient.js` — 요청에 `effort` 를 싣는다
+- [x] `store.js` — 기본 모델 교체 · `effort` 추가, v5 로 올려 저장된 옛 모델 이름을 덮어씀
+- [x] `SetupPanel.jsx` — 모델 선택지 교체, effort 선택칸
+- [x] `Workspace.jsx` · `QuizPanel.jsx` — 저장된 effort 를 넘긴다
+- [x] `tools/*.mjs` — 옛 모델 이름을 새 이름으로
+- [x] README — 사전 조건에 CLI 2.1.280 이상, 1단계 설정 설명
+- [x] 실제 호출 — dev 서버로 25개 묶음 하나를 Opus 5.5 · medium 으로 생성
+      → 검증: 로그 `enrich claude-opus-5-5/medium 52.6s · 출력 6129`. 25개 전부 돌아옴, 시간 제한 600초에 넉넉함
+- [x] lint · 빌드 · 스모크 테스트 통과

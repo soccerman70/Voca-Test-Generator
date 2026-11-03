@@ -8,7 +8,7 @@ import { generateQuizParts } from '../lib/quizClient.js'
 import { downloadTest, downloadAnswers } from '../lib/exportDocx.js'
 
 export default function QuizPanel() {
-  const { rows, passages, model, confirmedAt, docTitle, setStep } = useStore()
+  const { rows, passages, model, effort, confirmedAt, docTitle, setStep } = useStore()
   const result = useMemo(() => allocate(rows), [rows])
   const { parts, stats, shortages, thirdDetail, ok } = result
 
@@ -33,7 +33,7 @@ export default function QuizPanel() {
     setGenBusy(true)
     setGenError('')
     try {
-      setGen(await generateQuizParts({ parts, model, onProgress: setGenProgress }))
+      setGen(await generateQuizParts({ parts, model, effort, onProgress: setGenProgress }))
     } catch (err) {
       setGenError(err.message)
     } finally {

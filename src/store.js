@@ -27,7 +27,8 @@ const initial = {
 
   targetCount: 100,
   mode: 'manual', // manual | ai
-  model: 'claude-sonnet-5',
+  model: 'claude-opus-5-5',
+  effort: 'medium', // claude -p --effort. 답하기 전에 얼마나 생각할지
   docTitle: '', // 엑셀 첫 줄과 파일 이름에 쓰는 단어장 제목
 
   focusedId: null,
@@ -145,6 +146,7 @@ export const useStore = create(
       setDocTitle: (docTitle) => set({ docTitle: String(docTitle).slice(0, DOC_TITLE_MAX) }),
       setMode: (mode) => set({ mode }),
       setModel: (model) => set({ model }),
+      setEffort: (effort) => set({ effort }),
       /**
        * 시험지 화면으로 넘어가는 것이 곧 단어장 확정이다.
        * 별도 확정 버튼을 두지 않는 대신, 표를 고치면 확정이 풀려(updateRow·removeRow)
@@ -221,7 +223,9 @@ export const useStore = create(
       // 예전에 저장된 지문에는 label 이 없어 화면에 빈 번호가 찍히므로 입력 단계부터 다시 받는다.
       // v4 — 파일을 뒤에 더 올릴 수 있게 되면서 파일마다 원문(text)과 열쇠(key)를 들고 있어야 한다.
       // 그 전에 저장된 파일 목록에는 둘 다 없어 "파일 빼기"가 빈 지문을 만든다.
-      version: 4,
+      // v5 — 모델이 5.5 세대로 바뀌었다. 저장된 옛 이름(claude-sonnet-5 등)은 선택칸의 어떤 선택지와도
+      // 맞지 않으므로 기본값(Opus 5.5 · effort medium)으로 한 번 덮어쓴다.
+      version: 5,
       migrate: (state, from) => {
         let next = from < 2 ? { ...state, model: initial.model } : state
         if (from < 4) {
@@ -235,6 +239,7 @@ export const useStore = create(
             step: initial.step,
           }
         }
+        if (from < 5) next = { ...next, model: initial.model, effort: initial.effort }
         return next
       },
       partialize: (s) => ({
@@ -244,6 +249,7 @@ export const useStore = create(
         targetCount: s.targetCount,
         mode: s.mode,
         model: s.model,
+        effort: s.effort,
         docTitle: s.docTitle,
         focusedId: s.focusedId,
         selections: s.selections,

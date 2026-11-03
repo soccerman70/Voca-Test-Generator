@@ -40,6 +40,7 @@ export default function SetupPanel() {
     targetCount,
     mode,
     model,
+    effort,
     docTitle,
     sourceFiles,
     rows,
@@ -51,6 +52,7 @@ export default function SetupPanel() {
     setDocTitle,
     setMode,
     setModel,
+    setEffort,
     setStep,
   } = useStore()
 
@@ -513,8 +515,19 @@ export default function SetupPanel() {
                 <div className="field">
                   <label htmlFor="model">AI 모델</label>
                   <select id="model" value={model} onChange={(e) => setModel(e.target.value)}>
-                    <option value="claude-sonnet-5">Sonnet 5 (속도 우선)</option>
-                    <option value="claude-opus-5">Opus 5 (정확도 우선)</option>
+                    <option value="claude-opus-5-5">Opus 5.5 (정확도 우선)</option>
+                    <option value="claude-sonnet-5-5">Sonnet 5.5 (속도 우선)</option>
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="effort">생각 깊이 (effort)</label>
+                  <select id="effort" value={effort} onChange={(e) => setEffort(e.target.value)}>
+                    <option value="low">low · 가장 빠름</option>
+                    <option value="medium">medium · 기본</option>
+                    <option value="high">high</option>
+                    <option value="xhigh">xhigh</option>
+                    <option value="max">max · 가장 느림</option>
                   </select>
                 </div>
               </div>

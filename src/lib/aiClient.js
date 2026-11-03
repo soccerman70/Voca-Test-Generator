@@ -103,6 +103,7 @@ export async function autoSelect({
   passages,
   quotas,
   model,
+  effort,
   exclude = [],
   oversample = SELECT_OVERSAMPLE,
   groupSize = SELECT_GROUP_SIZE,
@@ -140,6 +141,7 @@ export async function autoSelect({
         passages: groups[index],
         exclude,
         model,
+        effort,
       })
 
       if (u) {
@@ -164,7 +166,7 @@ export async function autoSelect({
  * 표제어 정규화 + 파생어/유의어/반의어 생성.
  * 배치로 나눠 동시에 호출하고 진행률을 알린다.
  */
-export async function enrichAll({ items, model, batchSize = 25, concurrency = CONCURRENCY, onProgress, signal }) {
+export async function enrichAll({ items, model, effort, batchSize = 25, concurrency = CONCURRENCY, onProgress, signal }) {
   const batches = []
   for (let i = 0; i < items.length; i += batchSize) {
     batches.push(items.slice(i, i + batchSize))
@@ -207,6 +209,7 @@ export async function enrichAll({ items, model, batchSize = 25, concurrency = CO
         items: payload,
         antonymTargetRatio: ANTONYM_TARGET_RATIO,
         model,
+        effort,
       })
 
       if (u) {
