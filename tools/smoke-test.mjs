@@ -8,6 +8,7 @@ import { splitPassages, splitSentences, sentenceAt } from '../src/lib/passages.j
 import { tokenize, surfaceOf, locateSurface } from '../src/lib/tokenize.js'
 import { guessPos, guessLevel, summarize } from '../src/lib/posLite.js'
 import { parseGoogleLink, fileNameFrom, fileNameFor } from '../server/googleLink.js'
+import { allocate, verbForm } from '../src/lib/quizAllocate.js'
 
 let failures = 0
 const check = (label, cond, detail = '') => {
@@ -344,6 +345,55 @@ check('이름이 없으면 빈 문자열', fileNameFrom('') === '')
 check('확장자 없는 이름은 형식에서 붙인다', fileNameFor('file', 'attachment; filename="지문"', 'text/plain; charset=utf-8') === '지문.txt')
 check('이름 없는 구글 문서', fileNameFor('doc', '', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') === '구글 문서.docx')
 check('확장자 있으면 그대로', fileNameFor('file', 'attachment; filename="a.PDF"', 'application/octet-stream') === 'a.PDF')
+
+/* 11. 시험지 배정 시드 ------------------------------------------ */
+console.log('\n[11] 시험지 배정 시드')
+// 굴절 열쇠가 서로 겹치지 않도록 k 로 끝나는 만든 낱말을 쓴다 (zoraak, zorabk …)
+const stemOf = (i) => `zor${String.fromCharCode(97 + (i % 26))}${String.fromCharCode(97 + Math.floor(i / 26))}k`
+const VERB_FORMS = [(h) => h, (h) => `${h}s`, (h) => `${h}ing`, (h) => `${h}ed`, (h) => `${h}t`]
+const quizRows = Array.from({ length: 70 }, (_, i) => {
+  const kind = i % 7
+  const stem = stemOf(i)
+  const pos = ['동', '동', '형', '부', '명', '구', '명'][kind]
+  const headword = pos === '구' ? `${stem} up` : stem
+  const surface = pos === '동' ? VERB_FORMS[i % 5](stem) : headword
+  return {
+    id: `r${i}`,
+    headword,
+    surface,
+    pos,
+    meaning: `뜻${i}`,
+    sentence: `They saw ${surface} there.`,
+    passageNo: 1,
+    derivatives: i % 2 === 0 ? [{ word: `${stem}ness`, pos: '명' }] : [],
+    synonyms: i % 3 === 0 ? [{ word: 'alpha' }, { word: 'beta' }] : i % 3 === 1 ? [{ word: 'gamma' }] : [],
+    antonyms: i % 4 === 0 ? [{ word: 'delta', confidence: 4 }] : [],
+  }
+})
+const idsOf = (a) =>
+  JSON.stringify(Object.fromEntries(Object.entries(a.parts).map(([k, v]) => [k, (k === 'III' ? v.all : v).map((r) => r.id)])))
+const picked = (a) => Object.entries(a.parts).flatMap(([k, v]) => (k === 'III' ? v.all : v))
+
+const plain = allocate(quizRows)
+check('시드가 없으면 단어장 순서 그대로', idsOf(plain) === idsOf(allocate(quizRows, {})) && idsOf(plain) === idsOf(allocate(quizRows, { seed: undefined })))
+check('같은 시드는 같은 배정', idsOf(allocate(quizRows, { seed: 7 })) === idsOf(allocate(quizRows, { seed: 7 })))
+check('다른 시드는 다른 배정', idsOf(allocate(quizRows, { seed: 1 })) !== idsOf(allocate(quizRows, { seed: 2 })))
+check('시드를 줘도 단어장 통계는 같다', JSON.stringify(allocate(quizRows, { seed: 3 }).stats) === JSON.stringify(plain.stats))
+
+for (const seed of [11, 22, 33]) {
+  const a = allocate(quizRows, { seed })
+  const all = picked(a)
+  check(`시드 ${seed} — 모든 PART 를 채움`, a.ok, JSON.stringify(a.shortages))
+  check(`시드 ${seed} — 한 번 쓴 말은 다시 안 씀`, new Set(all.map((r) => r.headword)).size === all.length, `${all.length}개`)
+  check(`시드 ${seed} — PART 조건 유지`,
+    a.parts.IV.every((r) => r.pos === '동') &&
+      a.parts.II.every((r) => r.pos === '형' || r.pos === '부') &&
+      a.parts.V.every((r) => r.synonyms.length >= 2) &&
+      a.parts.VI.every((r) => r.pos !== '구'))
+  check(`시드 ${seed} — PART IV 형태가 모두 다름`,
+    new Set(a.parts.IV.map((r) => verbForm(r.surface, r.headword))).size === 5,
+    a.parts.IV.map((r) => verbForm(r.surface, r.headword)).join(','))
+}
 
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)

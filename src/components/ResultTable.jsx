@@ -15,6 +15,7 @@ export default function ResultTable() {
     passages,
     docTitle,
     confirmedAt,
+    quizzes,
     setStep,
     updateRow,
     removeRow,
@@ -132,6 +133,14 @@ export default function ResultTable() {
       </div>
 
       {error && <div className="error-box">{error}</div>}
+
+      {/* 단어장이 바뀌면 만든 시험지는 모두 지워진다 (store 의 NO_QUIZZES) */}
+      {quizzes.some((q) => q.gen) && (
+        <div className="notice-box">
+          문항까지 만든 단어시험지가 {quizzes.filter((q) => q.gen).length}개 있습니다. 표를 고치거나 엑셀을 다시 불러오면
+          만든 시험지가 <strong>모두 지워집니다</strong>. 필요한 시험지는 먼저 ④ 화면에서 내려받아 두세요.
+        </div>
+      )}
 
       {imported && (
         <div className="panel">

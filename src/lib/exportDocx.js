@@ -452,10 +452,13 @@ export async function downloadDocx(doc, fileName) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+/** 시험지가 여럿이면 파일 이름 끝에 번호를 붙인다. 문서 안의 제목은 그대로다. */
+const numbered = (data) => (data.fileNo ? `_${data.fileNo}` : '')
+
 export async function downloadTest(data) {
-  await downloadDocx(buildTestDoc(data), `${safeName(data.title)}_시험지.docx`)
+  await downloadDocx(buildTestDoc(data), `${safeName(data.title)}_시험지${numbered(data)}.docx`)
 }
 
 export async function downloadAnswers(data) {
-  await downloadDocx(buildAnswerDoc(data), `${safeName(data.title)}_정답해설.docx`)
+  await downloadDocx(buildAnswerDoc(data), `${safeName(data.title)}_정답해설${numbered(data)}.docx`)
 }

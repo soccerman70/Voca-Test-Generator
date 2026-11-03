@@ -178,7 +178,7 @@ export default function SetupPanel() {
   const applyWordbook = () => {
     // 지문 입력·표제어 선택을 거치지 않는 경로라 지금까지의 작업이 전부 밀린다
     const working = rows.length || selections.length || sourceFiles.length
-    if (working && !confirm('지금까지의 지문·표제어·단어장을 지우고 불러온 단어장으로 바꿀까요?')) return
+    if (working && !confirm('지금까지의 지문·표제어·단어장·시험지를 지우고 불러온 단어장으로 바꿀까요?')) return
     loadWordbook({ rows: imported.rows, passages: imported.passages, docTitle: imported.docTitle })
   }
 

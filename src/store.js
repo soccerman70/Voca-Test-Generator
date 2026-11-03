@@ -39,7 +39,17 @@ const initial = {
   lastUsage: null,
   // 단어장을 확정한 시각. 시험지 화면으로 넘어가는 순간 찍히고, 표를 한 칸이라도 고치면 지워진다.
   confirmedAt: null,
+
+  // 만든 단어시험지 목록. [{ id, no, seed, createdAt, parts, shortages, ok, thirdDetail, context, gen }]
+  // 시험지 화면은 탭을 옮기면 내려가므로 여기 두어야 AI 문항과 앞뒤 문장 조절이 살아남는다.
+  quizzes: [],
+  activeQuizId: null,
+  // 생성 중인 시험지별 진행률. 보존하지 않는다 — 새로고침하면 요청 자체가 끊긴다.
+  quizBusy: {},
 }
+
+/** 단어장이 바뀌면 만든 시험지는 더 이상 맞지 않는다. 단어장을 바꾸는 동작마다 함께 비운다. */
+const NO_QUIZZES = { quizzes: [], activeQuizId: null }
 
 export const useStore = create(
   persist(
@@ -71,6 +81,7 @@ export const useStore = create(
             // 지문 구성이 달라졌으면 이미 만든 표는 더 이상 맞지 않는다. 다시 생성해야 한다.
             rows: [],
             antonymStats: null,
+            ...NO_QUIZZES,
             focusedId: passages.some((p) => p.id === s.focusedId) ? s.focusedId : passages[0]?.id ?? null,
             // 지문을 만들었다고 바로 넘기지 않는다. 같은 화면에서 미리보기로 분할을 확인하고
             // 개수·선택 방식·모델을 정한 뒤 "표제어 선택 시작" 버튼으로 넘어가는 것이 원래 흐름이다.
@@ -97,6 +108,7 @@ export const useStore = create(
           lastUsage: null,
           confirmedAt: Date.now(),
           step: 'quiz',
+          ...NO_QUIZZES,
         }),
 
       /**
@@ -115,6 +127,7 @@ export const useStore = create(
           lastUsage: null,
           confirmedAt: null,
           step: 'result',
+          ...NO_QUIZZES,
           ...(sameWork
             ? { docTitle: docTitle || s.docTitle }
             : {
@@ -204,16 +217,50 @@ export const useStore = create(
       /* ---------------- 결과 ---------------- */
 
       setRows: (rows, antonymStats, lastUsage) =>
-        set({ rows, antonymStats, lastUsage, step: 'result', confirmedAt: null }),
+        set({ rows, antonymStats, lastUsage, step: 'result', confirmedAt: null, ...NO_QUIZZES }),
 
       updateRow: (id, patch) =>
         set((s) => ({
           rows: s.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
           confirmedAt: null,
+          ...NO_QUIZZES,
         })),
 
       removeRow: (id) =>
-        set((s) => ({ rows: s.rows.filter((r) => r.id !== id), confirmedAt: null })),
+        set((s) => ({ rows: s.rows.filter((r) => r.id !== id), confirmedAt: null, ...NO_QUIZZES })),
+
+      /* ---------------- 시험지 ---------------- */
+
+      /** 새 시험지를 목록 끝에 더하고 그것을 연다. */
+      addQuiz: (quiz) => set((s) => ({ quizzes: [...s.quizzes, quiz], activeQuizId: quiz.id })),
+
+      /**
+       * patch 는 객체이거나, 지금 시험지를 받아 바꿀 값을 돌려주는 함수다.
+       * 생성 도중 단어장이 바뀌어 시험지가 지워졌다면 없는 id 라 아무 일도 없다.
+       */
+      updateQuiz: (id, patch) =>
+        set((s) => ({
+          quizzes: s.quizzes.map((q) =>
+            q.id === id ? { ...q, ...(typeof patch === 'function' ? patch(q) : patch) } : q
+          ),
+        })),
+
+      removeQuiz: (id) =>
+        set((s) => {
+          const quizzes = s.quizzes.filter((q) => q.id !== id)
+          const activeQuizId = s.activeQuizId === id ? quizzes[quizzes.length - 1]?.id ?? null : s.activeQuizId
+          return { quizzes, activeQuizId }
+        }),
+
+      setActiveQuiz: (id) => set({ activeQuizId: id }),
+
+      setQuizBusy: (id, progress) =>
+        set((s) => {
+          const quizBusy = { ...s.quizBusy }
+          if (progress) quizBusy[id] = progress
+          else delete quizBusy[id]
+          return { quizBusy }
+        }),
     }),
     {
       name: 'jls-vocab-store',
@@ -256,6 +303,8 @@ export const useStore = create(
         rows: s.rows,
         antonymStats: s.antonymStats,
         confirmedAt: s.confirmedAt,
+        quizzes: s.quizzes,
+        activeQuizId: s.activeQuizId,
       }),
     }
   )
