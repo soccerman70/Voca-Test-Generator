@@ -26,6 +26,17 @@ function safeModel(model) {
   return isKnownModel(model) ? model : DEFAULT_MODEL
 }
 
+/**
+ * 영어 오류 문구만으로는 무엇을 해야 할지 모르는 경우에 붙이는 안내.
+ * 원문은 그대로 두고 뒤에 덧붙이므로, 문구가 바뀌어 안 걸려도 잃는 것은 없다.
+ */
+function hintFor(message) {
+  if (/does not support this model/i.test(message)) {
+    return '\n→ 설치된 Claude Code 가 이 모델을 지원하지 않습니다. PowerShell 에서 claude update 를 실행하고 개발 서버를 다시 켜거나, 다른 모델을 고르세요.'
+  }
+  return ''
+}
+
 /** 한 번의 헤드리스 호출. 프롬프트는 stdin으로 넘겨 인자 따옴표 문제를 피한다. */
 function runClaude(prompt, { model = DEFAULT_MODEL, timeoutMs = 600_000 } = {}) {
   return new Promise((resolve, reject) => {
@@ -71,19 +82,25 @@ function runClaude(prompt, { model = DEFAULT_MODEL, timeoutMs = 600_000 } = {}) 
       settled = true
       clearTimeout(timer)
 
-      if (code !== 0) {
-        return reject(new Error(`Claude CLI 종료 코드 ${code}\n${stderr.slice(0, 800)}`))
-      }
-
-      let envelope
+      // CLI 는 API 오류가 나도 결과 JSON 을 stdout 에 쓰고 종료 코드 1 로 끝난다. stderr 는 비어 있다.
+      // 종료 코드부터 보면 원인이 적힌 result 를 버리고 "종료 코드 1" 만 남으므로 JSON 을 먼저 읽는다.
+      let envelope = null
       try {
         envelope = JSON.parse(stdout)
       } catch {
-        return reject(new Error(`CLI 응답을 해석할 수 없습니다:\n${stdout.slice(0, 800)}`))
+        /* 아래에서 종료 코드와 함께 알린다 */
       }
 
-      if (envelope.is_error) {
-        return reject(new Error(`Claude 오류: ${envelope.result || envelope.subtype}`))
+      if (envelope?.is_error) {
+        const message = envelope.result || envelope.subtype
+        return reject(new Error(`Claude 오류: ${message}${hintFor(message)}`))
+      }
+      if (code !== 0) {
+        const detail = (stderr || stdout).trim().slice(0, 800)
+        return reject(new Error(`Claude CLI 종료 코드 ${code}${detail ? `\n${detail}` : ''}`))
+      }
+      if (!envelope) {
+        return reject(new Error(`CLI 응답을 해석할 수 없습니다:\n${stdout.slice(0, 800)}`))
       }
 
       resolve({
