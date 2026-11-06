@@ -16,7 +16,7 @@ import { splitPassages, sentenceAt } from '../src/lib/passages.js'
 const PORT = process.argv[2] || '5180'
 const BATCH_SIZE = Number(process.argv[3] || 25)
 const CONCURRENCY = Number(process.argv[4] || 3)
-const MODEL = process.argv[5] || 'claude-sonnet-5'
+const MODEL = process.argv[5] || 'claude-sonnet-5-5'
 const BASE = `http://localhost:${PORT}/api/ai`
 
 const { value: text } = await mammoth.extractRawText({ buffer: await readFile('samples/샘플지문.docx') })

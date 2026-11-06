@@ -9,6 +9,7 @@
  */
 
 import { spawn } from 'node:child_process'
+import { DEFAULT_MODEL, isKnownModel } from '../src/lib/models.js'
 import { buildSelectPrompt, buildEnrichPrompt } from './prompts.js'
 import {
   buildPartIIPrompt,
@@ -21,11 +22,8 @@ const IS_WIN = process.platform === 'win32'
 const CLAUDE_BIN = process.env.CLAUDE_BIN || (IS_WIN ? 'claude.cmd' : 'claude')
 
 // Windows에서는 셸을 거쳐 실행되므로 인자로 나가는 값은 반드시 허용 목록으로 막는다.
-const ALLOWED_MODELS = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5-20251001']
-const DEFAULT_MODEL = 'claude-sonnet-5'
-
 function safeModel(model) {
-  return ALLOWED_MODELS.includes(model) ? model : DEFAULT_MODEL
+  return isKnownModel(model) ? model : DEFAULT_MODEL
 }
 
 /** 한 번의 헤드리스 호출. 프롬프트는 stdin으로 넘겨 인자 따옴표 문제를 피한다. */

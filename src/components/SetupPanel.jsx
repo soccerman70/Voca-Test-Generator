@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { extractText, fileKind } from '../lib/textExtract.js'
 import { splitMultiple, mergePassages, removePassage } from '../lib/passages.js'
+import { MODELS } from '../lib/models.js'
 import { downloadText } from '../lib/exportXlsx.js'
 import { readWordbook } from '../lib/importXlsx.js'
 import { checkHealth } from '../lib/aiClient.js'
@@ -26,12 +27,26 @@ const STYLE_SAMPLE = {
 let sourceSeq = 0
 const nextSourceKey = () => `f${Date.now().toString(36)}${(sourceSeq += 1).toString(36)}`
 
-function styleLabel(style) {
-  if (!style) return ''
-  const [kind, detail] = style.split(':')
-  if (kind === 'word') return ` (${detail} 1 형식)`
-  if (kind === 'ko-ordinal') return ` (제1${detail} 형식)`
-  return STYLE_SAMPLE[kind] ? ` (${STYLE_SAMPLE[kind]} 형식)` : ''
+function styleLabel(file) {
+  // 예전에 저장된 파일 목록에는 markerSections 가 없다
+  const sections = file.markerSections?.length
+    ? file.markerSections
+    : file.markerStyle
+      ? [{ style: file.markerStyle }]
+      : []
+  const samples = sections.map(sectionSample).filter(Boolean)
+  return samples.length ? ` (${samples.join(', ')} 형식)` : ''
+}
+
+function sectionSample({ style, sample }) {
+  // 꼬리표 표기는 앞부분에 ':' 가 들어 있을 수 있어 첫 ':' 에서만 자른다
+  const at = style.indexOf(':')
+  const kind = at < 0 ? style : style.slice(0, at)
+  const detail = at < 0 ? '' : style.slice(at + 1)
+  if (kind === 'id') return sample || `${detail}1`
+  if (kind === 'word') return `${detail} 1`
+  if (kind === 'ko-ordinal') return `제1${detail}`
+  return STYLE_SAMPLE[kind] || ''
 }
 
 export default function SetupPanel() {
@@ -416,7 +431,7 @@ export default function SetupPanel() {
                   {sourceFiles.length > 1 && <strong>{f.tag}</strong>}
                   <span>
                     {f.name} · 지문 {f.count}개 · {SPLIT_LABEL[f.method] || ''}
-                    {styleLabel(f.markerStyle)}
+                    {styleLabel(f)}
                   </span>
                   <button
                     className="btn ghost sm"
@@ -513,8 +528,11 @@ export default function SetupPanel() {
                 <div className="field">
                   <label htmlFor="model">AI 모델</label>
                   <select id="model" value={model} onChange={(e) => setModel(e.target.value)}>
-                    <option value="claude-sonnet-5">Sonnet 5 (속도 우선)</option>
-                    <option value="claude-opus-5">Opus 5 (정확도 우선)</option>
+                    {MODELS.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

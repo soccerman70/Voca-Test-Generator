@@ -53,10 +53,22 @@ const MARKER_PATTERNS = [
     re: /^(\d{1,3})\s*\)\s*(.*)$/,
     read: (m) => ({ no: Number(m[1]), rest: m[2], style: 'paren' }),
   },
+  {
+    // PR-21-01   21_기출 예제 01   1-3
+    // 줄 전체가 짧은 꼬리표이고 끝이 번호인 경우. 번호 앞부분을 통째로 표기로 삼으므로
+    // 앞부분이 글자 하나까지 같은 줄끼리만 한 묶음이 된다. "Page 3" 같은 쪽 번호를
+    // 거르려고 앞부분에 숫자나 -, _ 가 있어야 한다.
+    re: /^(?=.{3,30}$)(.*\D)(\d{1,3})$/,
+    read: (m) => {
+      const prefix = m[1]
+      if (!/[\d_-]/.test(prefix) || !/[A-Za-z0-9가-힣]/.test(prefix)) return null
+      return { no: Number(m[2]), rest: '', style: `id:${prefix}` }
+    },
+  },
 ]
 
 /** 오인 소지가 적은 표기일수록 높다. 맨 숫자(dot)가 가장 위험하다. */
-const STYLE_BONUS = { word: 30, 'ko-ordinal': 25, bracket: 20, 'ko-no': 15, paren: 5, dot: 0 }
+const STYLE_BONUS = { word: 30, 'ko-ordinal': 25, bracket: 20, id: 20, 'ko-no': 15, paren: 5, dot: 0 }
 const styleBonus = (style) => STYLE_BONUS[style.split(':')[0]] ?? 0
 
 export function classifyLine(line) {
@@ -93,9 +105,37 @@ const FOOTNOTE_LINE = /^\s*[*※†‡]/
 const CHOICE_LINE = new RegExp(`^\\s*[${CIRCLED}]`)
 const ENDS_SENTENCE = /[.!?]["'’”»)\]]*\s*$/
 
-/** 지문 본문이 아니라 문항 장치인 줄이면 참. */
-function isApparatus(line) {
-  return FOOTNOTE_LINE.test(line) || (CHOICE_LINE.test(line) && !ENDS_SENTENCE.test(line))
+/**
+ * 발문 줄. "1. 밑줄 친 … 가장 적절한 것은?" 처럼 한글로 묻고 끝난다.
+ * 발문에 인용한 영어가 길면 줄 전체가 영어로 분류되어, 한글만 걷힌 인용 조각이 본문에 섞인다.
+ */
+const QUESTION_STEM = /[가-힣].*(?:것은|것을|것끼리|고르시오|쓰시오|하시오)\s*[?？.]?\s*(?:[[(][^\])]*[\])])?\s*$/
+
+const CHOICE_ORDER = [...'①②③④⑤⑥⑦⑧⑨⑩']
+
+/**
+ * 지문 본문이 아니라 문항 장치인 줄의 위치.
+ *
+ * 선지가 완결된 영어 문장이면 CHOICE_LINE 만으로는 본문과 가를 수 없다. 그래서 발문
+ * 바로 뒤에 ①②③… 이 줄머리에 차례로 셋 이상 이어지면 선지 묶음으로 본다. 발문 뒤라는
+ * 조건과 셋 이상이라는 조건은, 무관한 문장 문항처럼 지문 문장 자체에 ①~⑤가 붙은 줄과
+ * 첫 단어에 ①이 붙은 어법 지문을 지키기 위해서다.
+ */
+function apparatusLines(lines) {
+  const skip = new Set()
+  lines.forEach((line, i) => {
+    if (FOOTNOTE_LINE.test(line) || QUESTION_STEM.test(line)) skip.add(i)
+    else if (CHOICE_LINE.test(line) && !ENDS_SENTENCE.test(line)) skip.add(i)
+    if (!QUESTION_STEM.test(line)) return
+    const block = []
+    for (let j = i + 1; j < lines.length && block.length < CHOICE_ORDER.length; j++) {
+      if (!lines[j]) continue
+      if (!lines[j].startsWith(CHOICE_ORDER[block.length])) break
+      block.push(j)
+    }
+    if (block.length >= 3) block.forEach((j) => skip.add(j))
+  })
+  return skip
 }
 
 /** 동그라미 번호 표시를 지우고 그 자리에 생긴 빈칸을 정리한다. */
@@ -123,7 +163,9 @@ function detectMarkers(lines) {
     for (const pattern of MARKER_PATTERNS) {
       const m = text.match(pattern.re)
       if (!m) continue
-      const { no, rest, style } = pattern.read(m)
+      const hit = pattern.read(m)
+      if (!hit) break
+      const { no, rest, style } = hit
       if (!Number.isFinite(no) || no < 1 || no > 300) break
       // "3.14" 같은 소수는 번호가 아니라 값이다
       if (style === 'dot' && /^\d/.test(rest)) break
@@ -193,20 +235,62 @@ function pickMarkers(lines) {
     if (!byStyle.has(hit.style)) byStyle.set(hit.style, [])
     byStyle.get(hit.style).push(hit)
   }
+  const scored = []
   let best = null
   for (const [style, items] of byStyle) {
     const run = ascendingRun(items)
-    const score = scoreRun(run, items.length - run.length, lines)
-    if (score >= 30 && (!best || score > best.score)) best = { style, run, score }
+    const candidate = { style, items, run, score: scoreRun(run, items.length - run.length, lines) }
+    scored.push(candidate)
+    if (candidate.score >= 30 && (!best || candidate.score > best.score)) best = candidate
   }
-  return best
+  return best ? withSections(best, scored, lines) : null
+}
+
+/* ── 한 문서 안의 여러 묶음 ────────────────────────────────────────
+ * "21_기출 예제 01~02" 다음에 "PR-21-01~08"이 오는 식으로, 한 문서 안에서 머리표가
+ * 바뀌며 번호가 다시 1부터 시작하기도 한다. 표기를 하나만 고르면 다른 묶음의 지문은
+ * 첫 번호 앞이라 버려지거나 앞 지문에 붙는다.
+ *
+ * 고른 표기와 종류가 같은(꼬리표끼리, 말머리끼리) 묶음 가운데 아래를 모두 지키는 것만 잇는다.
+ *   - 걸러낸 오탐 없이 1부터 빠짐없이 이어진다
+ *   - 모든 머리 뒤에 영어 지문이 따라온다
+ *   - 다른 묶음과 줄 범위가 겹치지 않는다
+ *   - 하나짜리 묶음은 문서 맨 앞에 있을 때만 잇는다. 그 자리는 잇지 않으면 버려지는
+ *     내용이라 잘못 이어도 잃을 것이 없지만, 다른 자리에서는 멀쩡한 지문을 가른다.
+ */
+const SECTION_KINDS = new Set(['id', 'word'])
+const kindOf = (style) => style.split(':')[0]
+
+function withSections(best, scored, lines) {
+  const sections = [best]
+  if (SECTION_KINDS.has(kindOf(best.style))) {
+    const candidates = scored
+      .filter((c) => c !== best && kindOf(c.style) === kindOf(best.style))
+      .filter((c) => c.items.length === c.run.length && c.run[0].no === 1 && c.run.at(-1).no === c.run.length)
+      .filter((c) => c.run.every((mk) => startsPassage(lines, mk.line, mk.rest)))
+      .sort((a, b) => b.run.length - a.run.length)
+    for (const c of candidates) {
+      const from = c.run[0].line
+      const to = c.run.at(-1).line
+      if (sections.some((s) => from <= s.run.at(-1).line && to >= s.run[0].line)) continue
+      if (c.run.length === 1 && sections.some((s) => s.run[0].line < from)) continue
+      sections.push(c)
+    }
+  }
+  sections.sort((a, b) => a.run[0].line - b.run[0].line)
+  return {
+    style: sections.map((s) => s.style).join(' + '),
+    run: sections.flatMap((s) => s.run),
+    sections: sections.map((s) => ({ style: s.style, sample: lines[s.run[0].line], count: s.run.length })),
+  }
 }
 
 function buildPassage(id, no, lines) {
   const en = []
   const ko = []
-  for (const line of lines) {
-    if (isApparatus(line)) continue
+  const skip = apparatusLines(lines)
+  for (const [i, line] of lines.entries()) {
+    if (skip.has(i)) continue
     const kind = classifyLine(line)
     if (kind === 'en') {
       const cleaned = stripInsertionMarks(stripKoreanInline(line))
@@ -224,7 +308,9 @@ function buildPassage(id, no, lines) {
 }
 
 /**
- * @returns {{ passages: Array, method: string, markerStyle: string|null, markerCount: number }}
+ * `markerSections` 는 번호 묶음마다 { style, sample, count } 이다. 묶음이 둘 이상이면
+ * `markerStyle` 은 각 표기를 " + " 로 이은 것이다.
+ * @returns {{ passages: Array, method: string, markerStyle: string|null, markerSections: Array, markerCount: number }}
  */
 export function splitPassages(rawText) {
   const lines = String(rawText).split('\n').map((l) => l.trim())
@@ -245,6 +331,7 @@ export function splitPassages(rawText) {
         passages: renumber(passages),
         method: 'marker',
         markerStyle: best.style,
+        markerSections: best.sections,
         markerCount: best.run.length,
       }
     }
@@ -288,6 +375,7 @@ export function splitPassages(rawText) {
       passages: renumber(passages),
       method: 'heuristic',
       markerStyle: null,
+      markerSections: [],
       markerCount: best?.run.length ?? 0,
     }
   }
@@ -298,6 +386,7 @@ export function splitPassages(rawText) {
     passages: only.english ? [only] : [],
     method: 'single',
     markerStyle: null,
+    markerSections: [],
     markerCount: best?.run.length ?? 0,
   }
 }
@@ -385,8 +474,8 @@ export function splitMultiple(sources) {
   const all = []
   list.forEach((src, i) => {
     const key = src.key || `s${i}`
-    const { passages, method, markerStyle } = splitPassages(src.text)
-    files.push({ ...src, key, tag: tags[i], count: passages.length, method, markerStyle })
+    const { passages, method, markerStyle, markerSections } = splitPassages(src.text)
+    files.push({ ...src, key, tag: tags[i], count: passages.length, method, markerStyle, markerSections })
     for (const p of passages) all.push({ ...p, source: src.name, sourceKey: key, sourceTag: tags[i] })
   })
   return { passages: renumber(all), files }

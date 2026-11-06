@@ -120,6 +120,33 @@ const noMarker = `${passages[0].english}\n${passages[0].korean}\n\n${passages[1]
 const r2 = splitPassages(noMarker)
 check('번호 없어도 2개로 분할', r2.passages.length === 2, `${r2.passages.length}개 / method=${r2.method}`)
 
+// 올림포스 문항 꼴: 꼬리표 머리 → 지문 → 각주 → 문항 번호·발문 → 문장 선지.
+// 머리표가 "예제 01~02"에서 "PR-21-01~03"으로 바뀌며 번호가 다시 1부터 시작하고,
+// 지문 뒤의 문항 번호는 원본에서부터 1, 2, 1, 4, 3 으로 어긋나 있다.
+console.log('\n[6-2] 꼬리표 머리 · 지문 뒤 발문')
+const enBody = (k) => `Body ${k} opens with a claim about learning. It then explains the claim with care. Finally it ends here.`
+const choices = (k) => [1, 2, 3, 4, 5].map((c) => `${'①②③④⑤'[c - 1]} Choice ${c} of item ${k} is a full sentence.`).join('\n\n')
+const item = (head, k, qno) =>
+  `${head}\n\n${enBody(k)}\n\n*claim: 주장\n\n${qno}. 밑줄 친 ends here가 다음 글에서 의미하는 바로 가장 적절한 것은?\n\n${choices(k)}`
+const workbook = [
+  'QN 21: 함축적 의미',
+  item('21_기출 예제 01', 1, 1),
+  item('21_기출 예제 02', 2, 2),
+  item('PR-21-01', 3, 1),
+  item('PR-21-02', 4, 4),
+  item('PR-21-03', 5, 3),
+].join('\n\n')
+const r3 = splitPassages(workbook)
+check('두 묶음 합쳐 5개', r3.passages.length === 5, `${r3.passages.length}개 / ${r3.markerStyle}`)
+check('묶음마다 첫 머리 표시', r3.markerSections.map((s) => s.sample).join(',') === '21_기출 예제 01,PR-21-01',
+  JSON.stringify(r3.markerSections))
+check('지문마다 제 본문', r3.passages.every((p, i) => p.english === enBody(i + 1)), r3.passages.map((p) => p.english.slice(0, 12)).join(' / '))
+
+// 발문이 앞서지 않은 ①~⑤ 줄은 무관한 문장 문항처럼 지문 자체일 수 있으니 남긴다.
+const numbered = `1.\nIntro sentence here.\n① First claim is made.\n② Second claim follows.\n③ Third claim closes.\n\n2.\n${enBody(9)}`
+const r4 = splitPassages(numbered)
+check('발문 없는 ①~③ 문장은 지문으로 남김', r4.passages[0]?.english.includes('Third claim closes.'), r4.passages[0]?.english)
+
 /* 7. XLSX 워크북 --------------------------------------------- */
 console.log('\n[7] XLSX 생성')
 const { buildWorkbook, COLUMNS } = await import('../src/lib/exportXlsx.js')

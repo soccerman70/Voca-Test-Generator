@@ -7,6 +7,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { sentenceAt } from './lib/passages.js'
 import { guessPos, guessLevel } from './lib/posLite.js'
+import { DEFAULT_MODEL, upgradeModel } from './lib/models.js'
 
 let seq = 0
 const nextId = () => `s${Date.now().toString(36)}${(seq += 1).toString(36)}`
@@ -19,7 +20,7 @@ export const DOC_TITLE_MAX = 30
 
 const initial = {
   step: 'input', // input | select | result
-  // 올린 파일 목록. [{ key, name, kind, text, tag, count, method, markerStyle }]
+  // 올린 파일 목록. [{ key, name, kind, text, tag, count, method, markerStyle, markerSections }]
   // 파일이 둘 이상이면 지문 번호에 tag 를 붙여 "11강-1"처럼 구별한다.
   // 원문(text)까지 들고 있어야 파일을 더하거나 뺄 때 전체를 다시 나눌 수 있다.
   sourceFiles: [],
@@ -27,7 +28,7 @@ const initial = {
 
   targetCount: 100,
   mode: 'manual', // manual | ai
-  model: 'claude-sonnet-5',
+  model: DEFAULT_MODEL,
   docTitle: '', // 엑셀 첫 줄과 파일 이름에 쓰는 단어장 제목
 
   focusedId: null,
@@ -221,9 +222,12 @@ export const useStore = create(
       // 예전에 저장된 지문에는 label 이 없어 화면에 빈 번호가 찍히므로 입력 단계부터 다시 받는다.
       // v4 — 파일을 뒤에 더 올릴 수 있게 되면서 파일마다 원문(text)과 열쇠(key)를 들고 있어야 한다.
       // 그 전에 저장된 파일 목록에는 둘 다 없어 "파일 빼기"가 빈 지문을 만든다.
-      version: 4,
+      // v5 — 모델을 Opus 5.5 / Sonnet 5.5 로 바꿨다. 옛 값이 남아 있으면 선택 목록에 없는 값이
+      // 화면에 찍히고 서버는 말없이 기본 모델로 돌리므로, 같은 계열의 새 모델로 옮긴다.
+      version: 5,
       migrate: (state, from) => {
         let next = from < 2 ? { ...state, model: initial.model } : state
+        if (from < 5) next = { ...next, model: upgradeModel(next.model) }
         if (from < 4) {
           // fileInfo/splitMethod/splitStyle 은 partialize 에서 빠졌으므로 다음 저장 때 사라진다
           next = {

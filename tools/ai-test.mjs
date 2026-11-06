@@ -34,7 +34,7 @@ const { data: sel, secs: selSecs } = await post('select', {
   passages: passages
     .map((p, i) => ({ no: p.no, english: p.english, quota: quotas[i] }))
     .filter((p) => p.quota > 0),
-  model: 'claude-opus-5',
+  model: 'claude-opus-5-5',
 })
 console.log(`받은 항목: ${sel.items.length}개 · ${selSecs}초`)
 console.log(`지문별 쿼터: ${passages.map((p, i) => `${p.no}:${quotas[i]}`).join(" · ")}`)
@@ -86,7 +86,7 @@ for (const probe of PROBES) {
 const { data: enr, secs: enrSecs } = await post('enrich', {
   items: items.map(({ _want, _why, ...rest }) => rest),
   antonymTargetRatio: 0.4,
-  model: 'claude-opus-5',
+  model: 'claude-opus-5-5',
 })
 console.log(`받은 항목: ${enr.results.length}/${items.length}개 · ${enrSecs}초\n`)
 
@@ -146,7 +146,7 @@ const synItems = SYNTHETIC.map(([surface, sentence], i) => ({
 }))
 
 const { data: syn, secs: synSecs } = await post('enrich', {
-  items: synItems, antonymTargetRatio: 0.4, model: 'claude-opus-5',
+  items: synItems, antonymTargetRatio: 0.4, model: 'claude-opus-5-5',
 })
 console.log(`받은 항목: ${syn.results.length}/${synItems.length}개 · ${synSecs}초\n`)
 
