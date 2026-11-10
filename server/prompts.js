@@ -95,7 +95,7 @@ ${body}${excludeBlock}
 /* 2. 표제어 정규화 + 파생어 / 유의어 / 반의어 생성                     */
 /* ------------------------------------------------------------------ */
 
-export function buildEnrichPrompt({ items, antonymTargetRatio = 0.4 }) {
+export function buildEnrichPrompt({ items, antonymTargetRatio = 0.4, others = [] }) {
   const body = items
     .map(
       (it, i) =>
@@ -104,6 +104,16 @@ export function buildEnrichPrompt({ items, antonymTargetRatio = 0.4 }) {
     .join('\n')
 
   const antonymCount = Math.round(items.length * antonymTargetRatio)
+
+  // 같은 단어장의 다른 표제어. 묶음마다 따로 부르므로 이것을 넘기지 않으면 다른 묶음의 표제어를 모른다.
+  const otherList = others.length
+    ? `
+
+## 7) 이번 단어장의 다른 표제어 — 유의어 · 반의어로 쓰지 마라
+아래 말은 같은 단어장의 다른 표제어다(지문에 나온 형태 그대로라 굴절형일 수 있다).
+유의어 · 반의어가 이 말과 같거나 굴절형만 다르면 같은 시험지에서 답이 겹친다. 다른 말을 고르고, 없으면 비워 둔다.
+${others.join(', ')}`
+    : ''
 
   return `${JSON_ONLY}
 
@@ -176,10 +186,22 @@ export function buildEnrichPrompt({ items, antonymTargetRatio = 0.4 }) {
 - 이 경우 pos는 "어구"로 하고, 파생어는 빈 배열로 둔다.
 
 ## 2) 파생어(derivatives)
-- 최대 2개. 없으면 빈 배열.
-- 한국 고등학생이 알아둘 가치가 있는 유용한 파생어만 고른다.
+- **기본은 1개**, 둘 다 흔하고 학생에게 유용할 때만 2개. 알맞은 것이 없으면 빈 배열이 정상이다.
+  **망설여지는 말은 넣지 마라** — 파생어는 적어도 되지만 틀리거나 드문 말이 들어가면 안 된다.
+- 파생어는 표제어와 **어간을 함께 쓰는 같은 단어 가족의 말**로, 접미사를 바꾸거나 떼어 품사가 달라진 것이다.
+  기본형으로 돌아가는 것도 된다 (deliberately → deliberate ✓, accommodation → accommodate ✓, substantive → substance ✓,
+  blunted → blunt ✓, connotation → connote ✓). 아래만 파생어가 아니다.
+  - 분사형: 표제어나 그 동사의 -ed · -ing 꼴 (excite → excited ✗, exciting ✗ / excitement ✓).
+    -ing 로 끝나도 명사로 굳은 말(understanding)은 된다.
+  - 뜻을 바꾸는 **접두사**(un-, in-, im-, dis-, mis-, non-, pre- …)를 떼어 낸 말 (unbelievably → believe ✗,
+    irresponsible → response ✗, disagreement → agree ✗). 같은 접두사를 지닌 말(unbelievable, irresponsibility, disagree)은 된다.
+  - 합성어의 구성 요소 (worldwide → world ✗, photograph → graph ✗)
+  - 어원만 같고 영어 안에서 표제어에 접사를 붙여 만든 말이 아닌 동계어 (lunar → moon ✗, dental → tooth ✗)
+- 한국 고등학생이 **실제로 자주 마주치는** 말만 고른다. 사전에만 있고 수능 지문에 거의 나오지 않는 드문 꼴은 넣지 마라.
+  -ism · -ation · -ity · -al 을 기계적으로 붙인 꼴은 그 말이 실제로 흔히 쓰일 때만 넣는다.
+  (verbal → verbosity ✗, solid → solidness ✗, drama → dramaturgy ✗)
 - 우선순위: 명사형 > 형용사형 > 동사형 > 부사형.
-- 단, 특히 자주 쓰이면서 형태가 독특하거나 예외적인 파생어는 우선순위를 무시하고 먼저 넣는다.
+- 형태가 독특하거나 예외적인 파생어(deep → depth, pronounce → pronunciation)는 **흔히 쓰이는 것에 한해** 우선순위보다 먼저 넣는다.
 - 표제어와 형태가 거의 같은 뻔한 파생어(-ly만 붙인 것 등)는 다른 좋은 후보가 있으면 피한다.
 - 각 파생어에 품사를 함께 표기한다.
 - 각 파생어에 한국어 뜻(meaning)을 **가장 짧게** 단다.
@@ -189,7 +211,15 @@ export function buildEnrichPrompt({ items, antonymTargetRatio = 0.4 }) {
   - 뜻갈래는 표제어가 출처 문장에서 쓰인 뜻과 이어지는 것으로 고른다.
 
 ## 3) 유의어(synonyms)
-- 적절한 유의어가 존재한다면 **항상 2개**를 생성한다.
+- **되도록 2개를 단다.** 아래 조건을 지키는 말을 2개 찾을 수 있으면 반드시 2개다.
+  수능 수준 안에서 두 번째 말을 끝내 찾지 못할 때만 1개, 전문 용어 · 고유한 개념어(cytokine, collectivism)처럼
+  대신할 말이 아예 없을 때만 빈 배열이다.
+- **난이도**: 한국 고3 학생이 수능을 준비하며 익히는 어휘까지 쓸 수 있다. 쉬운 말이 있으면 쉬운 말을 먼저 적고,
+  두 번째는 수능 수준의 어휘여도 된다. 수능 범위를 넘는 문어적 · 학술적 희귀어만 넣지 마라.
+  (harmful → deleterious ✗, pernicious ✗ / damaging, detrimental ✓ · brave → intrepid ✗ / courageous, bold ✓ ·
+   praise → laud ✗, extol ✗ / compliment, commend ✓ · obvious → patent ✗ / clear, evident ✓)
+- **뜻의 범위가 같아야 한다.** 비슷해 보여도 가리키는 대상이나 범위가 다르면 넣지 마라.
+  (employee → servant ✗ : servant 는 시중드는 사람이라 범위가 다르다 / worker, staff ✓)
 - 가장 중요한 조건: **출처 문장에서 표제어 자리를 그대로 대체할 수 있어야 한다.**
   - 대체했을 때 어법 오류가 생기면 안 된다. (자동사/타동사, 전치사 결합, 가산/불가산 등)
   - 대체했을 때 어색하거나 문맥상 뜻이 달라지면 안 된다.
@@ -203,6 +233,8 @@ export function buildEnrichPrompt({ items, antonymTargetRatio = 0.4 }) {
 
 ## 4) 반의어(antonyms)
 - **꼭 맞는 좋은 반의어가 존재할 때만** 생성한다. 최대 2개.
+- **난이도**: 고2가 아는 쉬운 말로 (유의어보다 엄하게 본다). 쉬운 반의어가 없으면 넣지 마라.
+  (generous → parsimonious ✗ / stingy, selfish ✓ · visible → imperceptible ✗ / invisible, hidden ✓)
 - 억지스러운 반의어는 넣지 마라. 없으면 빈 배열이 정상이다.
 - 이번 묶음 ${items.length}개 중 반의어를 다는 항목은 **약 ${antonymCount}개**가 되도록 하라.
   (전체의 ${Math.round(antonymTargetRatio * 100)}% 수준. 이보다 많으면 안 된다.)
@@ -236,6 +268,9 @@ export function buildEnrichPrompt({ items, antonymTargetRatio = 0.4 }) {
 - 구문 틀은 틀 자체의 뜻을 적는다. (not only A but also B → "A뿐만 아니라 B도")
 - 같은 단어라도 문장이 다르면 뜻이 달라진다. **어떤 뜻갈래인지는 반드시 그 출처 문장을 근거로** 정하라.
   ("New ideas spring from..." 의 spring → "봄"이 아니라 "생겨나다")
+- 함께 쓰인 말(연어)이 뜻을 바꾸면 그 쓰임의 뜻을 적는다. ("the shelf life of milk" 의 life → "삶"이 아니라 "유통 기한")
+- 학생에게 낯선 한자어나 옛말은 피하고 요즘 쓰는 말로 적는다. 비슷한 두 말이면 그 문장에 더 정확한 쪽을 고른다.
+  ("modification" → 문장이 계획을 손보는 이야기면 "변화"보다 "수정")
 
 **원형으로 바꾼 경우의 뜻 (중요)**
 표제어를 원형으로 되돌렸다면 뜻도 **원형 기준**으로 적는다. 문장의 태(態)를 따라가지 마라.
@@ -244,7 +279,7 @@ export function buildEnrichPrompt({ items, antonymTargetRatio = 0.4 }) {
   - "individuals are immersed in a flow state" → 표제어 immerse, 뜻은 "몰두하다"가 아니라 **"몰두시키다"**
   - "the votes were tallied" → 표제어 tally, 뜻은 "집계되다"가 아니라 **"집계하다"**
   - "was brought about by" → 표제어 bring about, 뜻은 "야기되다"가 아니라 **"야기하다"**
-- 이것은 능동/수동 방향만의 문제다. 어느 뜻갈래를 고를지는 여전히 출처 문장을 따른다.
+- 이것은 능동/수동 방향만의 문제다. 어느 뜻갈래를 고를지는 여전히 출처 문장을 따른다.${otherList}
 
 ## 입력 항목
 ${body}

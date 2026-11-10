@@ -3237,3 +3237,27 @@ table.quiz-preview td.qa {
   text-align: center;
   color: var(--muted);
 }
+
+/*
+ * 칸 아래의 짧은 메모. cell-note 는 코드가 뺀 파생어(알림), cell-warn 은 다른 표제어와 겹치는
+ * 유의어 · 반의어(고칠 것). 한글이 섞여 UI 글꼴로, 칸 안에서 어절 단위로 꺾는다.
+ */
+.cell-note,
+.cell-warn {
+  display: block;
+  margin-top: 2px;
+  padding-left: 7px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: keep-all;
+}
+
+.cell-note {
+  color: var(--muted);
+}
+
+.cell-warn {
+  color: var(--semantic-down);
+}

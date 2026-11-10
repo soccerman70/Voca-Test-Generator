@@ -245,10 +245,14 @@ const routes = {
 
   /** 표제어 정규화 + 파생어/유의어/반의어 생성 (한 배치) */
   async enrich(body) {
-    const { items, antonymTargetRatio, model, effort } = body
+    const { items, antonymTargetRatio, model, effort, others } = body
     if (!Array.isArray(items) || !items.length) throw new Error('항목이 없습니다.')
 
-    const prompt = buildEnrichPrompt({ items, antonymTargetRatio })
+    // 같은 단어장의 다른 표제어 — 유의어 · 반의어로 쓰지 말라고 프롬프트에 붙인다. 글자만 받고 길이를 묶는다.
+    const otherHeads = Array.isArray(others)
+      ? others.filter((w) => typeof w === 'string' && w.trim()).map((w) => w.trim().slice(0, 60)).slice(0, 400)
+      : []
+    const prompt = buildEnrichPrompt({ items, antonymTargetRatio, others: otherHeads })
     const { text, usage, durationMs } = await runClaude(prompt, { model, effort })
     const parsed = parseJsonLoose(text)
 

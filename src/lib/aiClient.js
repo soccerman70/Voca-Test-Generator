@@ -186,6 +186,14 @@ export async function enrichAll({
     batches.push(items.slice(i, i + batchSize))
   }
 
+  // 같은 단어장의 모든 표제어(이번에 만들 것 + 표에 남는 것). 묶음마다 자기 것을 뺀 나머지를 실어
+  // 유의어 · 반의어로 다른 표제어를 쓰지 말라고 한다 — 묶음끼리는 서로의 표제어를 모른다.
+  const allHeads = [...new Set([...items.map((it) => it.surface), ...keep.map((r) => r.headword)].filter(Boolean))]
+  const othersFor = (batch) => {
+    const mine = new Set(batch.map((it) => it.surface))
+    return allHeads.filter((w) => !mine.has(w))
+  }
+
   // 끝나는 순서는 뒤섞이지만 결과는 입력 순서를 지켜야 한다. 배치별 자리를 미리 잡아두고 제자리에 채운다.
   const perBatch = new Array(batches.length).fill(null)
   // durationMs 는 이제 벽시계가 아니라 각 배치 소요의 합이다. 동시 실행이라 실제 경과는 이보다 짧다.
@@ -224,6 +232,7 @@ export async function enrichAll({
         antonymTargetRatio: ANTONYM_TARGET_RATIO,
         model,
         effort,
+        others: othersFor(batches[index]),
       })
 
       if (u) {
@@ -314,6 +323,15 @@ function normalizeBatch(results, sent) {
     const headword = dictForm(raw)
     const note = (r.normalizationNote || '').trim()
 
+    // 프롬프트로도 막지만, 분사형 · 접사를 뗀 말은 코드로 한 번 더 거른다. 뺀 것은 표에서 알 수 있게 남긴다.
+    const derivatives = []
+    const droppedDerivatives = []
+    for (const d of cleanEntries(r.derivatives, 2, cased)) {
+      const why = derivativeProblem(d, headword)
+      if (why) droppedDerivatives.push(`${d.word} (${why})`)
+      else derivatives.push(withShortMeaning(d))
+    }
+
     return {
       id: item.id,
       passageNo: item.passageNo,
@@ -325,7 +343,8 @@ function normalizeBatch(results, sent) {
       properNoun,
       pos: shortPos(r.pos),
       meaning: (r.meaning || '').trim(),
-      derivatives: cleanEntries(r.derivatives, 2, cased).map(withShortMeaning),
+      derivatives,
+      ...(droppedDerivatives.length ? { droppedDerivatives } : {}),
       synonyms: cleanEntries(r.synonyms, 2, dictForm),
       antonyms: cleanEntries(r.antonyms, 2, dictForm).map((a) => ({ ...a, confidence: Number(a.confidence) || 0 })),
       missing: !byId.has(String(item.id)),
@@ -340,6 +359,45 @@ function cleanEntries(list, max, cased = toLower) {
     .filter((e) => e && typeof e.word === 'string' && e.word.trim())
     .map((e) => ({ ...e, word: cased(e.word.trim()), pos: shortPos(e.pos) }))
     .slice(0, max)
+}
+
+/**
+ * 표제어 앞에 붙어 뜻을 바꾸는 접두사. 이것을 떼어 낸 말은 파생어가 아니다 —
+ * unbearably 의 파생어로 bear 를, invariably 로 vary 를, precaution 으로 caution 을 내면 안 된다.
+ * 길이가 긴 것부터 견준다(in 보다 inter 가 먼저).
+ */
+const PREFIXES = [
+  'counter', 'inter', 'under', 'over', 'anti', 'trans', 'non', 'dis', 'mis', 'pre', 'out',
+  'un', 'in', 'im', 'il', 'ir', 're', 'de', 'co',
+]
+
+/**
+ * 파생어로 쓰면 안 되는 이유. 괜찮으면 빈 문자열.
+ *
+ * - 분사형: -ed, 또는 명사가 아닌 -ing (bias → biased, gratification → gratifying).
+ *   -ing 로 끝나도 명사로 굳은 말(understanding)과, 원래 -eed 꼴인 말(succeed)은 둔다.
+ * - 접두사를 뗀 말: 표제어가 접두사로 시작하는데 파생어에는 그 접두사가 없고, 접두사 뒤의 몸통이
+ *   파생어의 앞 세 글자로 시작한다(unbearably → bear). 마지막 조건 덕분에 interest → interesting,
+ *   relevant → irrelevant 처럼 접두사와 상관없는 말은 걸리지 않는다.
+ * - 표제어와 같은 말이거나 굴절형만 다른 말.
+ *
+ * Week 08 검수 전 원본(파생어 77개)에서 검수가 지적한 다섯 개를 모두 잡고, 다른 것은 잡지 않았다.
+ * 합성어의 구성 요소(curvilinear → curve)와 어원만 같은 동계어(monetary → money)는 글자로 가를 수 없어 프롬프트에 맡긴다.
+ */
+export function derivativeProblem(entry, headword) {
+  const word = String(entry?.word || '').toLowerCase().trim()
+  const head = String(headword || '').toLowerCase().trim()
+  if (!word || !head) return ''
+  if (word === head) return '표제어와 같음'
+  // -eed 는 분사가 아니라 원래 그 꼴인 말이다 (success → succeed, excess → exceed)
+  if (/[^e]ed$/.test(word) || (/ing$/.test(word) && entry.pos !== '명')) return '분사형'
+  if (!/\s/.test(head) && word.length >= 3) {
+    const prefix = PREFIXES.find((p) => head.startsWith(p) && head.length > p.length + 2)
+    if (prefix && !word.startsWith(prefix) && head.slice(prefix.length).startsWith(word.slice(0, 3))) {
+      return '접두사를 뗀 말'
+    }
+  }
+  return ''
 }
 
 /**

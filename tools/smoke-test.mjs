@@ -597,5 +597,51 @@ check('원형 메모까지 한 줄에 — 메모가 더 길면 표제어 칸이 
   columnWidths([colRow({ headword: 'bring', surface: 'brought about', normalizationNote: '완료형 과거분사' })], fakeMeasure).widths.headword ===
     Math.round('brought about → 완료형 과거분사'.length * 8 + 46))
 
+/* 17. 생성 결과 점검 규칙 (Week 08 검수 기준) ---------------------- */
+console.log('\n[17] 생성 결과 점검 — 파생어 규칙 · 다른 표제어와 겹침 · 지문 기호 · 프롬프트')
+const { derivativeProblem } = await import('../src/lib/aiClient.js')
+const dp = (head, word, pos = '형') => derivativeProblem({ word, pos }, head)
+// Week 08 검수에서 지적한 다섯 개
+check('분사형 — bias → biased', dp('bias', 'biased') === '분사형')
+check('분사형 — gratification → gratifying', dp('gratification', 'gratifying') === '분사형')
+check('접두사를 뗀 말 — unbearably → bear', dp('unbearably', 'bear', '동') === '접두사를 뗀 말')
+check('접두사를 뗀 말 — invariably → vary', dp('invariably', 'vary', '동') === '접두사를 뗀 말')
+check('접두사를 뗀 말 — precaution → caution', dp('precaution', 'caution', '명') === '접두사를 뗀 말')
+// Week 08 검수가 굳은 형용사 gratifying 도 분사형으로 뺐다. 같은 기준을 따르면 interesting 도 빠진다
+check('굳은 -ing 형용사도 분사형 — interest → interesting', dp('interest', 'interesting') === '분사형')
+// 잡으면 안 되는 것
+const keepOk = [
+  ['success', 'succeed', '동'], ['excess', 'exceed', '동'], ['understand', 'understanding', '명'],
+  ['deep', 'depth', '명'], ['die', 'death', '명'], ['relevant', 'irrelevant', '형'],
+  ['unbearably', 'unbearable', '형'], ['precaution', 'precautionary', '형'], ['image', 'imagine', '동'],
+  ['decide', 'decision', '명'], ['react', 'reaction', '명'], ['pronounce', 'pronunciation', '명'],
+]
+const wronglyCaught = keepOk.filter(([h, w, pos]) => dp(h, w, pos))
+check('좋은 파생어는 잡지 않는다 (succeed · understanding · depth · death · irrelevant …)', wronglyCaught.length === 0,
+  JSON.stringify(wronglyCaught))
+
+const { headwordOverlaps } = await import('../src/lib/duplicates.js')
+const ovRows = [
+  { id: 'a', headword: 'accentuate', synonyms: [{ word: 'emphasize' }], antonyms: [{ word: 'diminish' }] },
+  { id: 'b', headword: 'diminished', synonyms: [{ word: 'reduced' }, { word: 'blunted' }], antonyms: [] },
+  { id: 'c', headword: 'blunted', synonyms: [{ word: 'dulled' }], antonyms: [] },
+]
+const ov = headwordOverlaps(ovRows)
+check('유의어가 다른 표제어 — diminished 의 blunted = 3번', ov.get('b')?.[0]?.otherNo === 3 && ov.get('b')[0].kind === '유의어')
+check('반의어가 다른 표제어(굴절형) — diminish = 2번 diminished', ov.get('a')?.[0]?.otherNo === 2 && ov.get('a')[0].kind === '반의어')
+check('겹치지 않는 줄은 없다', !ov.has('c'))
+
+const { stripInsertionMarks } = await import('../src/lib/passages.js')
+check('지문의 동그라미 글자 — transport ⓐ them', stripInsertionMarks('Proteins transport ⓐ them.') === 'Proteins transport them.')
+check('지문의 동그라미 대문자 · 한글', stripInsertionMarks('It was Ⓑ clear and ㉠ simple.') === 'It was clear and simple.')
+
+const { buildEnrichPrompt } = await import('../server/prompts.js')
+const promptItem = [{ id: 'x', surface: 'biased', passageNo: 1, sentence: 'A biased view.' }]
+const withOthers = buildEnrichPrompt({ items: promptItem, others: ['blunted', 'diminished'] })
+check('다른 표제어 목록이 프롬프트에 실린다', withOthers.includes('## 7)') && withOthers.includes('blunted, diminished'))
+check('목록이 없으면 그 절도 없다', !buildEnrichPrompt({ items: promptItem }).includes('## 7)'))
+check('유의어는 고3 수준까지 · 되도록 2개', withOthers.includes('되도록 2개') && withOthers.includes('고3'))
+
+
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)

@@ -162,3 +162,31 @@ export function findDuplicates(selections) {
 
   return { exact, derived, flaggedIds, total: exact.length + derived.length }
 }
+
+/**
+ * 유의어 · 반의어가 같은 단어장의 다른 표제어와 같은 줄을 찾는다(굴절형만 달라도 같다고 본다).
+ * 같은 시험지에서 한 말이 표제어이자 다른 말의 유의어 · 반의어가 되면 답이 겹친다.
+ * 묶음마다 따로 생성하므로 프롬프트에 다른 표제어를 알려 줘도 새어 나올 수 있어, 표에서 한 번 더 짚는다.
+ *
+ * @param {Array} rows 단어장 줄
+ * @returns {Map<string, Array<{kind: '유의어'|'반의어', word: string, otherNo: number}>>} 줄 id → 겹친 것들
+ */
+export function headwordOverlaps(rows) {
+  const byKey = new Map()
+  rows.forEach((r, i) => {
+    const key = inflectionKey(r.headword)
+    if (key && !byKey.has(key)) byKey.set(key, i)
+  })
+  const out = new Map()
+  rows.forEach((r, i) => {
+    const hits = []
+    for (const [field, kind] of [['synonyms', '유의어'], ['antonyms', '반의어']]) {
+      for (const entry of r[field] || []) {
+        const at = byKey.get(inflectionKey(entry.word))
+        if (at !== undefined && at !== i) hits.push({ kind, word: entry.word, otherNo: at + 1 })
+      }
+    }
+    if (hits.length) out.set(r.id, hits)
+  })
+  return out
+}

@@ -5,6 +5,7 @@ import { readWordbook, isSameWork, compareRows, compareWork } from '../lib/impor
 import { filesLabel } from '../lib/passages.js'
 import { confirmBeforeQuiz } from '../lib/quizGate.js'
 import { COLUMNS, columnWidths, domMeasure, loadTableFonts } from '../lib/columnWidths.js'
+import { headwordOverlaps } from '../lib/duplicates.js'
 import ImportNotes from './ImportNotes.jsx'
 import WorkCompare from './WorkCompare.jsx'
 
@@ -108,9 +109,12 @@ export default function ResultTable() {
    * 목록을 고정하는 이유 — "뜻 없음"으로 거른 채 뜻을 치면 그 줄이 조건에서 빠져 치는 도중에 사라진다.
    * 칩을 다시 누르면 지금 상태로 새로 거른다.
    */
+  // 유의어 · 반의어가 다른 표제어와 같은 줄. 칸 아래에 짚고, 거르기 칩으로도 고를 수 있다
+  const overlaps = useMemo(() => headwordOverlaps(rows), [rows])
+  const filterCtx = useMemo(() => ({ overlaps }), [overlaps])
   const filterCounts = useMemo(
-    () => Object.fromEntries(ROW_FILTERS.map((f) => [f.key, rows.filter(f.test).length])),
-    [rows]
+    () => Object.fromEntries(ROW_FILTERS.map((f) => [f.key, rows.filter((r) => f.test(r, filterCtx)).length])),
+    [rows, filterCtx]
   )
   const [rowFilter, setRowFilter] = useState('all')
   const [filterIds, setFilterIds] = useState(null) // 고정한 줄 id. null 이면 전체
@@ -119,7 +123,7 @@ export default function ResultTable() {
   const pickFilter = (key) => {
     const def = ROW_FILTERS.find((f) => f.key === key)
     setRowFilter(key)
-    setFilterIds(key === 'all' ? null : new Set(rows.filter(def.test).map((r) => r.id)))
+    setFilterIds(key === 'all' ? null : new Set(rows.filter((r) => def.test(r, filterCtx)).map((r) => r.id)))
   }
   // 번호는 표 전체에서의 번호 그대로 둔다 — 거르기는 보기만 바꾸고 엑셀 · 시험지는 언제나 표 전체다
   const shown = rows
@@ -366,9 +370,17 @@ export default function ResultTable() {
                 <td>
                   <AutoCell
                     value={formatDerivatives(r.derivatives)}
-                    onChange={(e) => updateRow(r.id, { derivatives: parseDerivatives(e.target.value) })}
+                    // 사람이 파생어를 고치면 "뺀 파생어" 메모는 더 맞지 않으므로 지운다
+                    onChange={(e) =>
+                      updateRow(r.id, { derivatives: parseDerivatives(e.target.value), droppedDerivatives: undefined })
+                    }
                     placeholder="—"
                   />
+                  {r.droppedDerivatives?.length > 0 && (
+                    <span className="cell-note" title="생성 규칙(분사형 · 접두사를 뗀 말)에 맞지 않아 뺐습니다">
+                      뺌: {r.droppedDerivatives.join(', ')}
+                    </span>
+                  )}
                 </td>
                 <td>
                   <AutoCell
@@ -376,6 +388,7 @@ export default function ResultTable() {
                     onChange={(e) => updateRow(r.id, { synonyms: parseWords(e.target.value) })}
                     placeholder="—"
                   />
+                  <OverlapNote hits={overlaps.get(r.id)} kind="유의어" />
                 </td>
                 <td>
                   <AutoCell
@@ -383,6 +396,7 @@ export default function ResultTable() {
                     onChange={(e) => updateRow(r.id, { antonyms: parseWords(e.target.value) })}
                     placeholder="—"
                   />
+                  <OverlapNote hits={overlaps.get(r.id)} kind="반의어" />
                 </td>
                 <td className="center">{r.passageLabel ?? r.passageNo}</td>
                 <td className="sentence">{highlight(r.sentence, r.surface)}</td>
@@ -430,7 +444,20 @@ const ROW_FILTERS = [
   { key: 'changed', label: '원형으로 바뀜', test: (r) => Boolean(r.normalizationNote) },
   { key: 'antonym', label: '반의어 있음', test: (r) => (r.antonyms || []).length > 0 },
   { key: 'edited', label: '내가 고친 줄', test: (r) => Boolean(r.edited) },
+  { key: 'overlap', label: '다른 표제어와 겹침', test: (r, ctx) => ctx.overlaps.has(r.id) },
+  { key: 'dropped', label: '뺀 파생어', test: (r) => (r.droppedDerivatives || []).length > 0 },
 ]
+
+/** 유의어 · 반의어 칸 아래의 짚음 — "= 79번 표제어 (blunted)" */
+function OverlapNote({ hits, kind }) {
+  const mine = (hits || []).filter((h) => h.kind === kind)
+  if (!mine.length) return null
+  return (
+    <span className="cell-warn" title="같은 시험지에서 답이 겹칩니다. 다른 말로 바꾸는 것이 좋습니다">
+      {mine.map((h) => `${h.word} = ${h.otherNo}번 표제어`).join(' · ')}
+    </span>
+  )
+}
 
 const passageOf = (r) => String(r.passageLabel ?? r.passageNo)
 
