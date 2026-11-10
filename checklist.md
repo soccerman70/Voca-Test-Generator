@@ -814,3 +814,12 @@ Week 08 단어장(80개)을 검수하니 파생어 · 유의어 · 반의어 · 
       → 검수가 남긴 원본 파생어 64개 중 61 · 59개가 다시 나옴
       → 검수가 고친 파생어 13칸 중 다시 나온 것 2 · 3 (sensationalism · archival · accentuation — 전과 같은 무리), 분사형 · 접두사 0
 - [ ] 1개인 줄의 둘째 후보는 대개 -ly 부사(prominently 등)나 분사형이라 규칙에 막힌다. 더 늘리려면 "-ly 부사는 둘째 자리로는 된다" 를 풀 수 있다
+
+---
+
+# 버전 1.3 (2026-11-10)
+
+- [x] `package.json` · `package-lock.json` — 1.3.0 (`npm version 1.3.0 --no-git-tag-version`), README 의 버전 설명. 화면에는 `v1.3`
+- 담긴 것: 시험지 검수(Week 07~09) 반영 — 머리글 · 요약문 빼기 · PART V 고3 선택지 · PART VI 도입/마무리 · PART III 힌트 · PART 하나만 다시 만들기,
+  파생어 다시 늘림
+- package-lock.json 의 버전 줄이 바뀌므로 다른 PC 에서는 start.bat 이 다음 실행에서 한 번 다시 설치한다(새 패키지는 없다)
