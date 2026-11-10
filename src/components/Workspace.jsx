@@ -8,10 +8,7 @@ import { filesLabel } from '../lib/passages.js'
 import { findDuplicates } from '../lib/duplicates.js'
 import { autoSelect, enrichAll, planQuotas } from '../lib/aiClient.js'
 import { runSelection } from '../lib/selectPlan.js'
-
-const REGENERATE_WARNING =
-  '이전 생성된 자료가 존재합니다. 다시 생성하시겠습니까?\n\n' +
-  '지금 표에 있는 파생어·유의어·반의어와 직접 고친 내용은 모두 새 결과로 바뀝니다.'
+import { planRegeneration, mergeRows } from '../lib/regenPlan.js'
 
 export default function Workspace() {
   const {
@@ -23,6 +20,7 @@ export default function Workspace() {
     mode,
     sourceFiles,
     rows,
+    lastUsage,
     setFocused,
     setTargetCount,
     toggleRange,
@@ -43,6 +41,8 @@ export default function Workspace() {
   const [genBusy, setGenBusy] = useState(false)
   const [genProgress, setGenProgress] = useState(null)
   const [genError, setGenError] = useState('')
+  // 이미 만든 표가 있을 때 — 'changed' 는 바뀐 표제어만, 'all' 은 표 전체를 새로 만든다
+  const [genScope, setGenScope] = useState('all')
 
   const byPassage = useMemo(() => {
     const map = new Map(passages.map((p) => [p.id, []]))
@@ -53,6 +53,12 @@ export default function Workspace() {
   }, [passages, selections])
 
   const duplicates = useMemo(() => findDuplicates(sortSelections(selections)), [selections])
+
+  // 표가 이미 있으면 지금 선택과 맞대어 새로 만들 것·남길 것·지울 것을 가른다
+  const regenPlan = useMemo(
+    () => (rows.length ? planRegeneration(sortSelections(selections), rows) : null),
+    [rows, selections]
+  )
 
   /* ---------------- AI 자동 추출 ---------------- */
 
@@ -131,28 +137,42 @@ export default function Workspace() {
   /* ---------------- 생성 ---------------- */
 
   const runGenerate = useCallback(async () => {
+    // 바뀐 표제어만 만들 때는 계획에 든 것만 AI 로 보내고, 나머지 줄은 표에 있는 그대로 남긴다
+    const partial = genScope === 'changed' && regenPlan
+    // 바뀐 것이 없으면 표를 건드리지 않고(확정도 그대로) 표로 돌아간다
+    if (partial && !regenPlan.changed) {
+      setModalOpen(false)
+      setStep('result')
+      return
+    }
+    const targets = partial ? regenPlan.toGenerate : sortSelections(selections)
+
     setGenBusy(true)
     setGenError('')
-    setGenProgress({ batch: 0, batchCount: 0, done: 0, total: selections.length })
+    setGenProgress({ batch: 0, batchCount: 0, done: 0, total: targets.length })
 
     try {
-      const items = sortSelections(selections).map((s) => ({
+      const items = targets.map((s) => ({
         id: s.id,
         surface: s.surface,
         passageNo: s.passageNo,
         sentence: s.sentence,
       }))
-      const { rows, antonymStats, usage } = await enrichAll({
+      const keep = partial ? regenPlan.entries.filter((e) => !e.regenerate).map((e) => e.row) : []
+      const { rows: fresh, antonymStats, usage } = await enrichAll({
         items,
         model,
+        keep,
         onProgress: setGenProgress,
       })
+      const next = partial ? mergeRows(regenPlan, fresh) : fresh
       // AI는 숫자 번호(passageNo)만 주고받는다. 표와 시험지에 찍을 표기는 여기서 되붙인다.
       const labelByNo = new Map(passages.map((p) => [p.no, p.label]))
       setRows(
-        rows.map((r) => ({ ...r, passageLabel: labelByNo.get(r.passageNo) ?? String(r.passageNo) })),
+        next.map((r) => ({ ...r, passageLabel: labelByNo.get(r.passageNo) ?? String(r.passageNo) })),
         antonymStats,
-        usage
+        // 지우기만 했으면 AI 를 부르지 않았다. 표에 찍힌 생성 시간은 지난번 것을 그대로 둔다.
+        items.length ? usage : lastUsage
       )
       setModalOpen(false)
     } catch (err) {
@@ -160,7 +180,7 @@ export default function Workspace() {
     } finally {
       setGenBusy(false)
     }
-  }, [model, passages, selections, setRows])
+  }, [genScope, lastUsage, model, passages, regenPlan, selections, setRows, setStep])
 
   /* ---------------- 렌더 ---------------- */
 
@@ -236,9 +256,10 @@ export default function Workspace() {
           onRemove={removeSelection}
           onClear={clearSelections}
           onGenerate={() => {
-            // 이미 만든 표가 있으면 덮어쓰기 전에 한 번 묻는다. 생성은 시간과 비용이 드는 작업이고,
-            // 표에서 손으로 고친 내용까지 함께 날아간다.
-            if (rows.length && !confirm(REGENERATE_WARNING)) return
+            // 이미 만든 표가 있으면 창에서 "바뀐 표제어만 / 전체 다시"를 고르게 한다.
+            // 지금 선택과 겹치는 줄이 하나라도 있으면 바뀐 것만 만드는 쪽이 기본이다 —
+            // 시간과 비용이 덜 들고, 표에서 손으로 고친 내용이 남는다.
+            setGenScope(regenPlan?.kept ? 'changed' : 'all')
             setGenError('')
             setModalOpen(true)
           }}
@@ -260,6 +281,9 @@ export default function Workspace() {
           progress={genProgress}
           error={genError}
           duplicates={duplicates}
+          plan={regenPlan}
+          scope={genScope}
+          onScopeChange={setGenScope}
           onRemove={removeSelection}
           onConfirm={runGenerate}
           onClose={() => setModalOpen(false)}

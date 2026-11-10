@@ -8,6 +8,9 @@ export default function GenerateModal({
   progress,
   error,
   duplicates,
+  plan,
+  scope,
+  onScopeChange,
   onRemove,
   onConfirm,
   onClose,
@@ -15,6 +18,11 @@ export default function GenerateModal({
   const stats = summarize(selections)
   const passageCount = new Set(selections.map((s) => s.passageNo)).size
   const off = stats.total - targetCount
+  // 표가 이미 있고 지금 선택과 겹치는 줄이 있을 때만 "바뀐 표제어만"을 고를 수 있다
+  const canPartial = Boolean(plan?.kept)
+  const partial = canPartial && scope === 'changed'
+  const genCount = partial ? plan.toGenerate.length : stats.total
+  const confirmLabel = partial && !plan.changed ? '표로 돌아가기' : partial && !genCount ? '표에 반영' : '생성 시작'
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
@@ -24,9 +32,37 @@ export default function GenerateModal({
         </header>
 
         <div className="modal-body">
+          {plan && !busy && (
+            <div className="scope-box">
+              <p className="scope-lead">이전 생성된 자료가 존재합니다.</p>
+              {canPartial ? (
+                <div className="scope-options" role="radiogroup">
+                  <ScopeOption on={scope === 'changed'} onPick={() => onScopeChange('changed')} title="바뀐 표제어만 생성">
+                    {plan.changed ? (
+                      <>
+                        {changeText(plan)} 나머지 <strong>{plan.kept}개</strong>는 표에 있는 그대로(직접 고친 내용
+                        포함) 둡니다.
+                      </>
+                    ) : (
+                      '지난번 생성 뒤로 바뀐 표제어가 없습니다. 표를 그대로 둡니다.'
+                    )}
+                  </ScopeOption>
+                  <ScopeOption on={scope === 'all'} onPick={() => onScopeChange('all')} title="전체 다시 생성">
+                    표제어 <strong>{stats.total}개</strong>를 모두 새로 만듭니다. 표에 있는 파생어·유의어·반의어와 직접
+                    고친 내용은 모두 새 결과로 바뀝니다.
+                  </ScopeOption>
+                </div>
+              ) : (
+                <p className="scope-note">
+                  지금 선택과 겹치는 표제어가 없어 표 전체가 새 결과로 바뀝니다. 표에서 직접 고친 내용도 사라집니다.
+                </p>
+              )}
+            </div>
+          )}
+
           <p style={{ marginTop: 0 }}>
-            선택한 표제어 <strong>{stats.total}개</strong>에 대해 표제어를 원형으로 정리하고 파생어·유의어·반의어를
-            생성합니다.
+            {partial ? '새로 만들' : '선택한'} 표제어 <strong>{genCount}개</strong>에 대해 표제어를 원형으로 정리하고
+            파생어·유의어·반의어를 생성합니다.
           </p>
 
           <div className="summary-grid">
@@ -97,7 +133,7 @@ export default function GenerateModal({
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="spinner dark" />
                 <span>
-                  {progress?.done ?? 0} / {progress?.total ?? stats.total}개 완료
+                  {progress?.done ?? 0} / {progress?.total ?? genCount}개 완료
                 </span>
               </div>
               <div className="progress-bar" style={{ marginTop: 8 }}>
@@ -121,11 +157,32 @@ export default function GenerateModal({
             {error ? '닫기' : '취소'}
           </button>
           <button className="btn primary" onClick={onConfirm} disabled={busy || stats.total === 0}>
-            {busy ? '생성 중…' : error ? '다시 시도' : '생성 시작'}
+            {busy ? '생성 중…' : error ? '다시 시도' : confirmLabel}
           </button>
         </footer>
       </div>
     </div>
+  )
+}
+
+/** "새로 고른 3개를 생성하고, 선택에서 뺀 2개는 표에서 지웁니다." */
+function changeText({ added, retry, removed }) {
+  const make = [added && `새로 고른 ${added}개`, retry && `지난번 응답에서 빠진 ${retry}개`].filter(Boolean).join('와 ')
+  const drop = removed.length ? `선택에서 뺀 ${removed.length}개는 표에서 지웁니다.` : ''
+  if (make && drop) return `${make}를 생성하고, ${drop}`
+  return make ? `${make}를 생성합니다.` : drop
+}
+
+/** 라디오 단추처럼 하나만 고르는 카드 */
+function ScopeOption({ on, onPick, title, children }) {
+  return (
+    <button type="button" role="radio" aria-checked={on} className={`scope-option${on ? ' on' : ''}`} onClick={onPick}>
+      <span className="scope-dot" aria-hidden="true" />
+      <span className="scope-text">
+        <span className="scope-title">{title}</span>
+        <span className="scope-desc">{children}</span>
+      </span>
+    </button>
   )
 }
 

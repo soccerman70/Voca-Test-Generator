@@ -163,8 +163,21 @@ export async function autoSelect({
 /**
  * 표제어 정규화 + 파생어/유의어/반의어 생성.
  * 배치로 나눠 동시에 호출하고 진행률을 알린다.
+ *
+ * @param keep 바뀐 표제어만 만들 때 표에 그대로 남는 줄. 반의어 비율을 표 전체로 따지는 데만 쓰고,
+ *   돌려주는 rows 에는 넣지 않는다. 비율을 넘으면 새로 만든 줄에서만 반의어를 덜어낸다 —
+ *   새 줄 몇 개만 놓고 비율을 따지면 1개짜리는 반의어가 늘 지워진다.
+ *   items 가 비어 있으면 AI 를 부르지 않고 keep 의 반의어 통계만 낸다.
  */
-export async function enrichAll({ items, model, batchSize = 25, concurrency = CONCURRENCY, onProgress, signal }) {
+export async function enrichAll({
+  items,
+  model,
+  keep = [],
+  batchSize = 25,
+  concurrency = CONCURRENCY,
+  onProgress,
+  signal,
+}) {
   const batches = []
   for (let i = 0; i < items.length; i += batchSize) {
     batches.push(items.slice(i, i + batchSize))
@@ -225,7 +238,7 @@ export async function enrichAll({ items, model, batchSize = 25, concurrency = CO
 
   await Promise.all(Array.from({ length: Math.min(concurrency, batches.length) }, worker))
 
-  const trimmed = enforceAntonymRatio(perBatch.flat())
+  const trimmed = enforceAntonymRatio(perBatch.flat(), keep)
   onProgress?.({
     phase: 'done',
     batch: batches.length,
@@ -342,30 +355,34 @@ export function withShortMeaning(entry) {
 /**
  * 반의어는 전체의 30~50%에만 달려야 한다.
  * 초과하면 confidence가 낮은 항목부터 떼어낸다.
+ * keep 은 함께 세기만 하고 손대지 않는 줄이다 (바뀐 표제어만 만들 때 표에 남는 줄).
+ * 돌려주는 rows 는 rows 쪽만, 통계는 rows + keep 전체에 대한 것이다.
  */
-function enforceAntonymRatio(rows) {
-  const withAntonyms = rows.filter((r) => r.antonyms.length > 0)
-  const maxAllowed = Math.floor(rows.length * ANTONYM_MAX_RATIO)
-  const minWanted = Math.ceil(rows.length * ANTONYM_MIN_RATIO)
+export function enforceAntonymRatio(rows, keep = []) {
+  const has = (r) => (r.antonyms || []).length > 0
+  const total = rows.length + keep.length
+  const withAntonyms = rows.filter(has).length + keep.filter(has).length
+  const maxAllowed = Math.floor(total * ANTONYM_MAX_RATIO)
+  const minWanted = Math.ceil(total * ANTONYM_MIN_RATIO)
 
   let removed = 0
-  if (withAntonyms.length > maxAllowed) {
-    const ranked = [...withAntonyms].sort(
-      (a, b) => confidenceOf(a) - confidenceOf(b) || a.headword.localeCompare(b.headword)
-    )
-    const dropCount = withAntonyms.length - maxAllowed
+  if (withAntonyms > maxAllowed) {
+    const ranked = rows
+      .filter(has)
+      .sort((a, b) => confidenceOf(a) - confidenceOf(b) || a.headword.localeCompare(b.headword))
+    const dropCount = Math.min(ranked.length, withAntonyms - maxAllowed)
     const dropIds = new Set(ranked.slice(0, dropCount).map((r) => r.id))
     rows = rows.map((r) => (dropIds.has(r.id) ? { ...r, antonyms: [], antonymTrimmed: true } : r))
     removed = dropCount
   }
 
-  const finalCount = rows.filter((r) => r.antonyms.length > 0).length
+  const finalCount = rows.filter(has).length + keep.filter(has).length
   return {
     rows,
     stats: {
       count: finalCount,
-      total: rows.length,
-      ratio: rows.length ? finalCount / rows.length : 0,
+      total,
+      ratio: total ? finalCount / total : 0,
       removed,
       belowMin: finalCount < minWanted,
       minWanted,

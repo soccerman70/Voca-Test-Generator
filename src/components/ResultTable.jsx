@@ -169,7 +169,8 @@ export default function ResultTable() {
       {issues.missing > 0 && (
         <div className="notice-box">
           AI 응답에서 {issues.missing}개 항목이 누락되어 원래 선택 그대로 채웠습니다 (아래 노란 줄). 해당 줄만 직접
-          채우거나, 선택 화면으로 돌아가 다시 생성해주세요.
+          채우거나, 선택 화면으로 돌아가 생성 창에서 <strong>바뀐 표제어만 생성</strong>을 고르면 이 줄들만 다시
+          만듭니다.
         </div>
       )}
 

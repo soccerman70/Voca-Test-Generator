@@ -365,5 +365,63 @@ check('새 줄 1개', diffOf(inserted) === '{"changed":0,"added":1,"removed":0}'
 check('새 줄을 알린다', inserted.warnings.unmatched.join(',') === 'urbanization', JSON.stringify(inserted.warnings.unmatched))
 check('새 줄이 있어도 같은 작업', isSameWork(inserted.rows, samplePassages))
 
+/* 바뀐 표제어만 생성 ------------------------------------------------ */
+console.log('\n[10] 바뀐 표제어만 생성 — 계획 · 엮기 · 반의어 비율')
+const { planRegeneration, mergeRows } = await import('../src/lib/regenPlan.js')
+const { enforceAntonymRatio } = await import('../src/lib/aiClient.js')
+
+const sel = (id, surface, sentence = `S ${surface}.`, passageNo = 1) => ({ id, surface, sentence, passageNo })
+const madeRow = (s, extra = {}) => ({
+  id: s.id, passageNo: s.passageNo, surface: s.surface, sentence: s.sentence, headword: s.surface,
+  derivatives: [], synonyms: [], antonyms: [], missing: false, ...extra,
+})
+const [sa, sb, sc, sd] = [sel('a', 'alpha'), sel('b', 'beta'), sel('c', 'gamma'), sel('d', 'delta')]
+const oldRows = [
+  madeRow(sa, { synonyms: [{ word: '손으로 고침' }] }),
+  madeRow(sb),
+  madeRow(sc, { missing: true }),
+  madeRow(sd),
+]
+// beta 를 빼고, epsilon 을 새로 고르고, delta 는 뺐다가 다시 골라 id 가 바뀌었다
+const se = sel('e', 'epsilon')
+const sd2 = { ...sd, id: 'd2' }
+const now = [sa, sc, sd2, se]
+const plan = planRegeneration(now, oldRows)
+check('새로 만들 것 = 새 선택 + 빠졌던 줄', plan.toGenerate.map((s) => s.id).join(',') === 'c,e', plan.toGenerate.map((s) => s.id).join(','))
+check('셈 — 새 1 · 다시 1 · 남김 2', plan.added === 1 && plan.retry === 1 && plan.kept === 2, JSON.stringify([plan.added, plan.retry, plan.kept]))
+check('뺀 줄은 지울 목록에', plan.removed.map((r) => r.id).join(',') === 'b', plan.removed.map((r) => r.id).join(','))
+check('다시 고른 낱말은 같은 표현·문장의 줄을 이어 쓴다', plan.entries[2].row?.id === 'd' && !plan.entries[2].regenerate)
+
+const fresh = [madeRow(sc, { headword: 'gamma-new' }), madeRow(se, { headword: 'epsilon-new' })]
+const merged = mergeRows(plan, fresh)
+check('엮은 표는 선택 순서', merged.map((r) => r.id).join(',') === 'a,c,d2,e', merged.map((r) => r.id).join(','))
+check('남긴 줄의 손댄 내용은 그대로', merged[0].synonyms[0]?.word === '손으로 고침')
+check('다시 만든 줄은 새 결과', merged[1].headword === 'gamma-new' && merged[3].headword === 'epsilon-new')
+check('이어 쓴 줄은 지금 선택 id 를 받는다', merged[2].id === 'd2' && merged[2].headword === 'delta')
+
+const unchanged = planRegeneration(oldRows.filter((r) => !r.missing).map((r) => sel(r.id, r.surface)), oldRows.filter((r) => !r.missing))
+check('바뀐 것이 없으면 changed=false', !unchanged.changed && unchanged.toGenerate.length === 0)
+check('id 를 가로채지 않는다 — 같은 표현 두 번', (() => {
+  const twin1 = sel('t1', 'same', 'Same sentence.')
+  const twin2 = sel('t2', 'same', 'Same sentence.')
+  const p = planRegeneration([twin1, twin2], [madeRow(twin2)])
+  return p.entries[1].row?.id === 't2' && p.entries[0].regenerate
+})())
+
+// 반의어 비율 — 남긴 줄은 세기만 하고 새 줄에서만 덜어낸다
+const ant = (id, conf) => ({ id, headword: id, antonyms: [{ word: 'x', confidence: conf }] })
+const plain = (id) => ({ id, headword: id, antonyms: [] })
+// 남긴 줄 8개 중 3개에 반의어 — 새 줄 1개를 더해도 4/9 로 상한(50%) 안이다
+const keepRows = [ant('k1', 1), ant('k2', 1), ant('k3', 1), plain('k4'), plain('k5'), plain('k6'), plain('k7'), plain('k8')]
+const one = enforceAntonymRatio([ant('n1', 0.9)], keepRows)
+check('새 줄 1개라도 표 전체 비율 안이면 반의어를 남긴다', one.rows[0].antonyms.length === 1 && one.stats.total === 9, JSON.stringify(one.stats))
+// 남긴 줄 6개(반의어 3) + 새 줄 2개(둘 다 반의어) = 5/8 → 상한 4 를 1 넘는다
+const over = enforceAntonymRatio([ant('n1', 0.9), ant('n2', 0.4)], keepRows.slice(0, 6))
+check('넘치면 새 줄에서 확신 낮은 것부터', over.rows.find((r) => r.id === 'n2').antonyms.length === 0 && over.rows.find((r) => r.id === 'n1').antonyms.length === 1, JSON.stringify(over.stats))
+const stuck = enforceAntonymRatio([ant('n1', 0.9)], [ant('k1', 1), ant('k2', 1), plain('k3')])
+check('남긴 줄은 넘쳐도 건드리지 않는다', stuck.rows[0].antonyms.length === 0 && stuck.stats.removed === 1, JSON.stringify(stuck.stats))
+const solo = enforceAntonymRatio([ant('n1', 0.9), plain('n2')])
+check('keep 없이 부르면 예전과 같다', solo.stats.total === 2 && solo.rows[0].antonyms.length === 1, JSON.stringify(solo.stats))
+
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)
