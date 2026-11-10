@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { extractText, fileKind, fetchGoogleFile } from '../lib/textExtract.js'
 import { splitMultiple, mergePassages, removePassage } from '../lib/passages.js'
 import { MODELS, EFFORTS } from '../lib/models.js'
 import { downloadText } from '../lib/exportXlsx.js'
-import { readWordbook } from '../lib/importXlsx.js'
+import { readWordbook, compareWork } from '../lib/importXlsx.js'
 import { checkHealth } from '../lib/aiClient.js'
 import { useStore, DOC_TITLE_MAX } from '../store.js'
 import WorkflowBanner from './WorkflowBanner.jsx'
 import ImportNotes from './ImportNotes.jsx'
+import WorkCompare from './WorkCompare.jsx'
 
 const SPLIT_LABEL = {
   marker: '지문 번호 표시를 기준으로 나눴습니다',
@@ -190,10 +191,19 @@ export default function SetupPanel() {
     }
   }
 
+  // 불러올 단어장을 지금 작업과 견준다. 패널이 무엇이 바뀌는지 보여주고, 다른 작업이면 붉게 세운다.
+  const comparison = useMemo(
+    () => (imported ? compareWork({ rows, selections, passages, docTitle }, imported) : null),
+    [imported, rows, selections, passages, docTitle]
+  )
+  const otherWork = Boolean(comparison?.hasWork && !comparison.sameWork)
+
+  /**
+   * 지문 입력 · 표제어 선택을 거치지 않는 경로라 지금까지의 작업이 전부 밀린다.
+   * 예전의 "모두 지우고 바꿀까요?" 확인 창은 뺐다 — 늘 같은 문구라 습관처럼 넘기게 된다.
+   * 대신 패널이 지금 작업과 견준 내용을 보이고, 바꾼 작업은 store 가 한 벌 보관해 되살릴 수 있다.
+   */
   const applyWordbook = () => {
-    // 지문 입력·표제어 선택을 거치지 않는 경로라 지금까지의 작업이 전부 밀린다
-    const working = rows.length || selections.length || sourceFiles.length
-    if (working && !confirm('지금까지의 지문·표제어·단어장·시험지를 지우고 불러온 단어장으로 바꿀까요?')) return
     loadWordbook({ rows: imported.rows, passages: imported.passages, docTitle: imported.docTitle })
   }
 
@@ -348,11 +358,19 @@ export default function SetupPanel() {
 
               <ImportNotes warnings={imported.warnings} />
 
+              {comparison && <WorkCompare cmp={comparison} />}
+
               <div className="import-actions">
-                <button className="btn primary" onClick={applyWordbook}>
-                  이 단어장으로 시험지 만들기 →
-                </button>
-                <button className="btn ghost" onClick={() => setImported(null)}>
+                {otherWork ? (
+                  <button className="btn danger" onClick={applyWordbook}>
+                    다른 작업으로 바꾸기
+                  </button>
+                ) : (
+                  <button className="btn primary" onClick={applyWordbook}>
+                    이 단어장으로 시험지 만들기 →
+                  </button>
+                )}
+                <button className={otherWork ? 'btn' : 'btn ghost'} onClick={() => setImported(null)}>
                   취소
                 </button>
               </div>

@@ -117,7 +117,8 @@ npm run dev
 
 내려받은 파일을 엑셀에서 고쳤다면 **⬆ 고친 엑셀 불러오기**로 다시 올린다. 고친 줄 · 새 줄 · 지운 줄 개수를
 먼저 보여주고, **이 내용으로 표 바꾸기**를 누르면 표가 파일 내용으로 바뀐다. 줄을 지우고 번호를 다시 매겨도
-줄마다 지문 속 형태가 제자리를 찾는다. 다른 지문에서 나온 단어장이면 지문도 함께 바뀐다고 미리 알린다.
+줄마다 지문 속 형태가 제자리를 찾는다. 다른 지문에서 나온 단어장이면 붉은 상자로 지금 작업과 견줘 보이고(아래 참고),
+버튼도 **다른 작업으로 바꾸기**로 바뀐다.
 
 ### 4단계 — 단어시험지 생성
 
@@ -141,7 +142,12 @@ PART 구성과 출제 규칙은 [quiz-spec.md](quiz-spec.md), 정본 양식은 [
 ### 만들어 둔 단어장으로 시험지만 만들기
 
 1단계 화면의 **단어장 불러와서 시험지 만들기**로 이 앱이 내보낸 XLSX 를 열면 ①②③ 을 건너뛰고 ④ 로 간다.
-불러온 내용을 확인 패널에서 한 번 보여주고, 기존 작업이 있으면 넘어가기 전에 덮어쓸지 묻는다.
+불러온 내용을 확인 패널에서 한 번 보여주고, 지금 작업이 있으면 그것과 견준다.
+
+- 다른 지문에서 나온 단어장이면 **붉은 상자**에 지금 작업과 불러올 파일의 제목 · 지문 · 표제어 선택 · 단어장 줄 수,
+  겹치는 표제어 수, 지금 지문에서 찾은 출처 문장 수를 나란히 보이고, 버튼은 **다른 작업으로 바꾸기**가 된다.
+- 바꾸면 지금 작업은 한 벌 **보관**된다. 헤더 아래 띠의 **되살리기**로 돌아온다(초기화도 같다). 띠는 새로고침해도 남고,
+  되살리면 그때의 작업이 대신 보관되어 잘못 눌러도 다시 돌아올 수 있다. 보관 칸은 하나라 새로 보관하면 그 전 것은 밀려난다.
 
 - 다른 엑셀 파일은 거절한다 (`심화단어장` 시트와 9열 머리글을 본다).
 - 숨김 시트가 없는 옛 파일은 출처 문장에서 표제어 형태를 거꾸로 찾아 살린다. 불규칙 변화(`buy`/`bought`)처럼 못 찾은 개수는 화면에 알린다.
@@ -193,7 +199,7 @@ src/
     quizBuild.js    AI 없이 조립하는 PART I · IV
     quizClient.js   PART II · III · V · VI 동시 생성과 결과 검사
     exportDocx.js   시험지 · 정답해설지 docx 내보내기
-  components/       SetupPanel · WorkflowBanner · Workspace · PassageCard · SelectionPanel · MetaPanel · GenerateModal · ResultTable · ImportNotes · QuizPanel
+  components/       SetupPanel · WorkflowBanner · Workspace · PassageCard · SelectionPanel · MetaPanel · GenerateModal · ResultTable · ImportNotes · WorkCompare · QuizPanel
   store.js          zustand 전역 상태 (localStorage 보존)
 tools/
   make-sample-docx.mjs  테스트용 샘플 지문 docx 생성

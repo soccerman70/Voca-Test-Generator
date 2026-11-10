@@ -347,6 +347,43 @@ export function isSameWork(rows, passages) {
 }
 
 /**
+ * 불러올 단어장을 지금 작업과 견준다. 1단계 · 3단계 불러오기가 "다른 작업입니다" 경고와
+ * 견줌 숫자를 보이는 데 함께 쓴다.
+ *
+ * 같은 작업인지는 isSameWork 와 같은 기준(출처 문장이 지금 지문 안에 절반 이상)이다.
+ * 표제어가 몇 개 겹치는지는 사람이 보기 위한 숫자다 — 지금 표가 있으면 표의 표제어, 없으면
+ * 2단계에서 고른 표현(굴절형일 수 있다)을 굴절 열쇠로 견준다.
+ *
+ * @param {{rows?: Array, selections?: Array, passages?: Array, docTitle?: string}} current 지금 작업
+ * @param {{rows: Array, docTitle?: string}} incoming 불러올 단어장
+ */
+export function compareWork(current, incoming) {
+  const rows = current.rows || []
+  const selections = current.selections || []
+  const passages = current.passages || []
+  const text = passages.map((p) => squash(p.english)).join('\n')
+  const sentenceHits = text ? incoming.rows.filter((r) => r.sentence && text.includes(squash(r.sentence))).length : 0
+
+  // 고른 표현은 굴절형(immersed)이고 파일의 표제어는 원형(immerse)이라, 묵음 e 를 뗀 열쇠로 맞춘다
+  const rootOf = (word) => {
+    const key = inflectionKey(word)
+    return silentEKey(key) || key
+  }
+  const mine = new Set((rows.length ? rows.map((r) => r.headword) : selections.map((s) => s.surface)).map(rootOf))
+  mine.delete('')
+  const sharedHeadwords = new Set(incoming.rows.map((r) => rootOf(r.headword)).filter((k) => k && mine.has(k))).size
+
+  return {
+    hasWork: rows.length > 0 || selections.length > 0 || passages.length > 0,
+    sameWork: isSameWork(incoming.rows, passages),
+    current: { title: current.docTitle || '', passages: passages.length, selections: selections.length, rows: rows.length },
+    incoming: { title: incoming.docTitle || '', rows: incoming.rows.length },
+    sentenceHits,
+    sharedHeadwords,
+  }
+}
+
+/**
  * 엑셀 시트에 보이는 칸만으로 만든 열쇠. 왕복에서 담지 않는 값(confidence 등)은 견주지 않는다.
  * 번호 칸은 줄 하나만 넘기므로 언제나 1이다 — 순서가 바뀐 것은 고친 것으로 치지 않는다.
  */

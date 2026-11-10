@@ -50,17 +50,59 @@ const initial = {
   activeQuizId: null,
   // 생성 중인 시험지별 진행률. 보존하지 않는다 — 새로고침하면 요청 자체가 끊긴다.
   quizBusy: {},
+
+  // 작업을 통째로 바꾸기 직전(다른 단어장 불러오기 · 초기화)의 작업 한 벌. 화면 위 띠의 "되살리기"로 돌아온다.
+  // { reason, savedAt, title, counts: { passages, selections, rows }, state }
+  prevWork: null,
 }
 
 /** 단어장이 바뀌면 만든 시험지는 더 이상 맞지 않는다. 단어장을 바꾸는 동작마다 함께 비운다. */
 const NO_QUIZZES = { quizzes: [], activeQuizId: null }
+
+/**
+ * 작업 한 벌을 이루는 값. 모델 · effort 같은 설정과 생성 중 표시(quizBusy)는 작업이 아니라 빠진다.
+ * 보관한 작업을 되살릴 때 이 값들만 통째로 돌려놓는다.
+ */
+const WORK_KEYS = [
+  'step', 'sourceFiles', 'passages', 'targetCount', 'mode', 'docTitle', 'quizHead', 'focusedId',
+  'selections', 'rows', 'antonymStats', 'lastUsage', 'confirmedAt', 'quizzes', 'activeQuizId',
+]
+
+const hasWork = (s) => s.rows.length > 0 || s.selections.length > 0 || s.passages.length > 0
+
+/**
+ * 지금 작업을 통째로 밀어내는 동작 직전에 한 벌 보관한다. 경고는 습관처럼 넘기게 되므로
+ * 바꾼 뒤에도 돌아올 길을 남긴다. 보관할 것이 없으면(빈 작업) 이미 보관한 것을 그대로 둔다.
+ * 칸은 하나다 — 새로 보관하면 그 전 것은 밀려난다.
+ */
+const keepPrev = (s, reason) => ({
+  prevWork: hasWork(s)
+    ? {
+        reason,
+        savedAt: Date.now(),
+        title: s.docTitle || s.sourceFiles[0]?.name || '',
+        counts: { passages: s.passages.length, selections: s.selections.length, rows: s.rows.length },
+        state: Object.fromEntries(WORK_KEYS.map((k) => [k, s[k]])),
+      }
+    : s.prevWork,
+})
 
 export const useStore = create(
   persist(
     (set, get) => ({
       ...initial,
 
-      reset: () => set({ ...initial }),
+      // 초기화도 작업을 통째로 지우므로 한 벌 보관한다. 모델 · effort 설정은 예전처럼 기본값으로 돌아간다.
+      reset: () => set((s) => ({ ...initial, ...keepPrev(s, '초기화') })),
+
+      /**
+       * 보관한 작업을 되살린다. 지금 작업은 버리지 않고 그 자리에 대신 보관한다 —
+       * 되살리기를 잘못 눌러도 한 번 더 누르면 돌아온다.
+       */
+      restorePrevWork: () =>
+        set((s) => (s.prevWork ? { ...s.prevWork.state, quizBusy: {}, ...keepPrev({ ...s, prevWork: null }, '되살리기') } : {})),
+
+      dismissPrevWork: () => set({ prevWork: null }),
 
       /* ---------------- 입력 ---------------- */
 
@@ -101,7 +143,8 @@ export const useStore = create(
        * 불러오는 순간이 곧 확정이다 — 표를 고치면 updateRow 가 확정을 푼다.
        */
       loadWordbook: ({ rows, passages = [], docTitle = '' }) =>
-        set({
+        set((s) => ({
+          ...keepPrev(s, '단어장 불러오기'),
           rows,
           passages,
           sourceFiles: [],
@@ -113,7 +156,7 @@ export const useStore = create(
           confirmedAt: Date.now(),
           step: 'quiz',
           ...NO_QUIZZES,
-        }),
+        })),
 
       /**
        * 3단계에서, 내보냈다가 엑셀에서 고친 단어장을 다시 받는다. 화면은 3단계에 머문다.
@@ -135,6 +178,8 @@ export const useStore = create(
           ...(sameWork
             ? { docTitle: docTitle || s.docTitle }
             : {
+                // 다른 작업의 파일이면 지문 · 표제어 선택까지 밀려나므로 한 벌 보관한다
+                ...keepPrev(s, '다른 단어장 불러오기'),
                 passages,
                 sourceFiles: [],
                 selections: [],
@@ -319,6 +364,7 @@ export const useStore = create(
         confirmedAt: s.confirmedAt,
         quizzes: s.quizzes,
         activeQuizId: s.activeQuizId,
+        prevWork: s.prevWork,
       }),
     }
   )

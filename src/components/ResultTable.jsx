@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store.js'
 import { downloadXlsx, formatDerivatives, formatWords, parseDerivatives } from '../lib/exportXlsx.js'
-import { readWordbook, isSameWork, compareRows } from '../lib/importXlsx.js'
+import { readWordbook, isSameWork, compareRows, compareWork } from '../lib/importXlsx.js'
 import { filesLabel } from '../lib/passages.js'
 import { confirmBeforeQuiz } from '../lib/quizGate.js'
 import ImportNotes from './ImportNotes.jsx'
+import WorkCompare from './WorkCompare.jsx'
 
 export default function ResultTable() {
   const {
@@ -14,6 +15,7 @@ export default function ResultTable() {
     model,
     sourceFiles,
     passages,
+    selections,
     docTitle,
     confirmedAt,
     quizzes,
@@ -66,6 +68,11 @@ export default function ResultTable() {
   const diff = useMemo(
     () => (imported?.sameWork ? compareRows(rows, imported.rows) : null),
     [imported, rows]
+  )
+  // 다른 작업의 파일이면 무엇이 밀려나는지 견줘 보인다 (1단계 불러오기와 같은 상자)
+  const comparison = useMemo(
+    () => (imported && !imported.sameWork ? compareWork({ rows, selections, passages, docTitle }, imported) : null),
+    [imported, rows, selections, passages, docTitle]
   )
 
   const issues = useMemo(
@@ -190,21 +197,24 @@ export default function ResultTable() {
               {diff && ` · ${diffText(diff)}`}
             </p>
 
-            {!imported.sameWork && (
-              <div className="notice-box">
-                지금 작업과 <strong>다른 지문</strong>에서 나온 단어장입니다. 표와 함께 지문도 이 파일의 것으로 바뀌고,
-                2단계의 표제어 선택은 비워집니다.
-                {!imported.passages.length && ' 이 파일에는 지문이 없어 PART IV 는 출처 문장 하나만 씁니다.'}
-              </div>
+            {comparison && <WorkCompare cmp={comparison} keepsSelections />}
+            {!imported.sameWork && !imported.passages.length && (
+              <p className="hint">이 파일에는 지문이 없어 PART IV 는 출처 문장 하나만 씁니다.</p>
             )}
 
             <ImportNotes warnings={imported.warnings} />
 
             <div className="import-actions">
-              <button className="btn primary" onClick={applyImport}>
-                이 내용으로 표 바꾸기
-              </button>
-              <button className="btn ghost" onClick={() => setImported(null)}>
+              {imported.sameWork ? (
+                <button className="btn primary" onClick={applyImport}>
+                  이 내용으로 표 바꾸기
+                </button>
+              ) : (
+                <button className="btn danger" onClick={applyImport}>
+                  다른 작업으로 바꾸기
+                </button>
+              )}
+              <button className={imported.sameWork ? 'btn ghost' : 'btn'} onClick={() => setImported(null)}>
                 취소
               </button>
             </div>

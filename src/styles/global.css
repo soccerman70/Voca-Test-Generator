@@ -495,6 +495,11 @@ table.vocab td.num,
 
 .btn.danger {
   color: var(--semantic-down);
+  box-shadow: inset 0 0 0 1px rgba(207, 32, 47, 0.35);
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: #fdecee;
 }
 
 .btn.sm {
@@ -2813,4 +2818,81 @@ table.quiz-preview td.qa {
 
 .undo-btn:hover {
   background: #e4ecff;
+}
+
+/*
+ * 보관한 작업을 되살리는 띠 — 헤더 바로 아래, 작업 화면 위에 한 줄.
+ * 경고가 아니라 "돌아올 길이 있다"는 안내라 브랜드 블루를 옅게 깐다.
+ */
+.prev-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-sm);
+  flex-shrink: 0;
+  padding: 8px var(--s-lg);
+  background: #e4ecff;
+  border-bottom: 1px solid rgba(0, 82, 255, 0.15);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.prev-text {
+  flex: 1;
+  min-width: 0;
+  word-break: keep-all;
+}
+
+.prev-bar .btn:not(.ghost) {
+  background: var(--canvas);
+}
+
+/*
+ * 불러올 단어장이 지금 작업과 다를 때의 경고. 늘 같은 확인 창은 습관처럼 넘기게 되므로
+ * 붉은 테두리 상자에 "무엇이 무엇으로 바뀌는지"를 두 줄로 나란히 세운다.
+ */
+.work-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--s-base) var(--s-md);
+  border: 1px solid var(--semantic-down);
+  border-radius: var(--r-md);
+  background: #fff7f8;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--body);
+}
+
+.wc-head {
+  font-weight: 700;
+  color: var(--semantic-down);
+}
+
+.wc-table {
+  width: auto;
+  border-collapse: collapse;
+}
+
+.wc-table th,
+.wc-table td {
+  padding: 3px 14px 3px 0;
+  text-align: left;
+  vertical-align: top;
+  font-size: 14px;
+}
+
+.wc-table th {
+  width: 84px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.wc-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.wc-facts {
+  margin: 0;
 }

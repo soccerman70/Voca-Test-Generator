@@ -11,7 +11,7 @@ import { version } from '../package.json'
 const APP_VERSION = version.replace(/\.0$/, '')
 
 export default function App() {
-  const { step, passages, rows, setStep, reset } = useStore()
+  const { step, passages, rows, prevWork, setStep, reset, restorePrevWork, dismissPrevWork } = useStore()
 
   const available = {
     input: true,
@@ -68,7 +68,11 @@ export default function App() {
             className="btn ghost sm"
             title="모든 작업 내용을 지우고 처음부터 시작합니다"
             onClick={() => {
-              if (confirm('지문·선택·생성 결과를 모두 지우고 처음부터 시작할까요?')) reset()
+              const ok = confirm(
+                '지문·선택·생성 결과를 모두 지우고 처음부터 시작할까요?\n' +
+                  '지운 작업은 화면 위 띠의 [되살리기]로 한 번 돌아올 수 있습니다.'
+              )
+              if (ok) reset()
             }}
           >
             초기화
@@ -76,12 +80,41 @@ export default function App() {
         </div>
       </header>
 
+      {prevWork && <PrevWorkBar prev={prevWork} onRestore={restorePrevWork} onDismiss={dismissPrevWork} />}
+
       <main className="app-main">
         {step === 'input' && <SetupPanel />}
         {step === 'select' && <Workspace />}
         {step === 'result' && <ResultTable />}
         {step === 'quiz' && <QuizPanel />}
       </main>
+    </div>
+  )
+}
+
+/**
+ * 작업을 통째로 바꾼 뒤(다른 단어장 불러오기 · 초기화) 헤더 아래에 남는 띠.
+ * 경고를 넘겨 버렸거나 바꾼 뒤에야 알아차려도 되살릴 수 있게, 닫거나 다음에 또 바꿀 때까지 남는다.
+ * 되살리면 지금 작업이 그 자리에 대신 보관되므로 잘못 눌러도 한 번 더 누르면 돌아온다.
+ */
+function PrevWorkBar({ prev, onRestore, onDismiss }) {
+  const { title, counts, reason } = prev
+  const what =
+    [counts.selections && `표제어 선택 ${counts.selections}개`, counts.rows && `단어장 ${counts.rows}줄`]
+      .filter(Boolean)
+      .join(' · ') || `지문 ${counts.passages}개`
+
+  return (
+    <div className="prev-bar" role="status">
+      <span className="prev-text">
+        {reason} 전의 작업 <strong>{title ? `‘${title}’` : '(제목 없음)'}</strong> — {what} — 을 보관해 두었습니다.
+      </span>
+      <button className="btn sm" onClick={onRestore}>
+        되살리기
+      </button>
+      <button className="btn ghost sm" onClick={onDismiss} title="보관한 작업을 지우고 이 띠를 닫습니다">
+        보관 지우기
+      </button>
     </div>
   )
 }

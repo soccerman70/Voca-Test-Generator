@@ -515,5 +515,31 @@ check('3반 · 5주차 · 2026년 처럼 붙여 써도 겹치지 않음',
 check('Week 5 · week5 도 Week 5', testHeadParts('t', { week: 'Week 5' }).week === 'Week 5' && testHeadParts('t', { week: 'week5' }).week === 'Week 5')
 check('앞뒤 공백 · 공백뿐인 칸', headOf('  t  ', { year: ' ', klass: ' A ' }) === JSON.stringify({ lead: '202__ t A반', week: 'Week #' }), headOf('  t  ', { year: ' ', klass: ' A ' }))
 
+/* 14. 불러올 단어장을 지금 작업과 견주기 --------------------------- */
+console.log('\n[14] 불러올 단어장 견주기 — week7 작업에 week6 단어장')
+const { compareWork } = await import('../src/lib/importXlsx.js')
+// week7: 지금 지문(p1)과 거기서 고른 표제어 / week6: 다른 지문의 문장과 표제어
+const week7 = {
+  docTitle: 'Week7',
+  passages: samplePassages,
+  selections: sampleRows.map((r) => ({ surface: r.surface })),
+  rows: [],
+}
+const week6Rows = [
+  { headword: 'erode', sentence: 'Coastal cliffs erode slowly over centuries.' },
+  { headword: 'immerse', sentence: 'Divers immerse themselves in cold water.' },
+  { headword: 'scarce', sentence: 'Fresh water is scarce in the desert.' },
+]
+const other = compareWork(week7, { docTitle: 'Week6', rows: week6Rows })
+check('다른 지문이면 다른 작업', other.hasWork && !other.sameWork, JSON.stringify(other))
+check('지금 작업 숫자', other.current.title === 'Week7' && other.current.selections === 2 && other.current.passages === 1, JSON.stringify(other.current))
+check('출처 문장은 지금 지문에 0개', other.sentenceHits === 0)
+check('겹치는 표제어 — 선택한 immersed 와 파일의 immerse 는 같은 말', other.sharedHeadwords === 1, String(other.sharedHeadwords))
+const same = compareWork(week7, { docTitle: 'Week7', rows: sampleRows })
+check('같은 지문의 단어장이면 같은 작업', same.sameWork && same.sentenceHits === sampleRows.length, JSON.stringify(same))
+check('지금 작업이 비었으면 견줄 것이 없다', !compareWork({ rows: [], selections: [], passages: [] }, { rows: week6Rows }).hasWork)
+check('표가 있으면 표의 표제어로 견준다',
+  compareWork({ ...week7, rows: [{ headword: 'scarce', sentence: 'x' }] }, { rows: week6Rows }).sharedHeadwords === 1)
+
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)
