@@ -269,9 +269,10 @@ export const useStore = create(
       setRows: (rows, antonymStats, lastUsage) =>
         set({ rows, antonymStats, lastUsage, step: 'result', confirmedAt: null, ...NO_QUIZZES }),
 
+      // edited — 사람이 표에서 고친 줄. 3단계 거르기의 "내가 고친 줄"이 본다. 엑셀에는 담지 않는다.
       updateRow: (id, patch) =>
         set((s) => ({
-          rows: s.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+          rows: s.rows.map((r) => (r.id === id ? { ...r, ...patch, edited: true } : r)),
           confirmedAt: null,
           ...NO_QUIZZES,
         })),

@@ -541,5 +541,29 @@ check('지금 작업이 비었으면 견줄 것이 없다', !compareWork({ rows:
 check('표가 있으면 표의 표제어로 견준다',
   compareWork({ ...week7, rows: [{ headword: 'scarce', sentence: 'x' }] }, { rows: week6Rows }).sharedHeadwords === 1)
 
+/* 15. AI 작업 방식 · 모자란 PART 처방 ------------------------------- */
+console.log('\n[15] AI 작업 방식 묶음 · 모자란 PART 처방')
+const { PRESETS, presetOf, aiLabel, DEFAULT_MODEL: DM, DEFAULT_EFFORT: DE } = await import('../src/lib/models.js')
+check('기본값은 "보통"', presetOf(DM, DE)?.id === 'normal')
+check('묶음마다 서로 다른 조합', new Set(PRESETS.map((p) => `${p.model}/${p.effort}`)).size === PRESETS.length)
+check('묶음에 없는 조합은 null · 이름은 모델 · effort', presetOf('claude-opus-5-5', 'max') === null && aiLabel('claude-opus-5-5', 'max') === 'Opus 5.5 · max',
+  aiLabel('claude-opus-5-5', 'max'))
+
+const { shortageAdvice } = await import('../src/lib/quizAllocate.js')
+const baseStats = { usable: 40, required: 35, verbs: 8, adjAdv: 8, withDerivatives: 5, withSynonyms: 9, withSynonyms2: 8, withAntonyms: 5 }
+const third = { derivative: { got: 2, need: 2 }, synonym: { got: 1, need: 1 }, antonym: { got: 2, need: 2 } }
+const adv = (part, stats = baseStats, detail = third, got = 0) => shortageAdvice({ part, got, need: 5 }, stats, detail)
+check('IV — 동사가 모자라면 더 고르기', adv('IV', { ...baseStats, verbs: 2 }).fix === 'more' && adv('IV', { ...baseStats, verbs: 2 }).text.includes('3개 더'),
+  adv('IV', { ...baseStats, verbs: 2 }).text)
+check('IV — 동사는 충분하면 배정 다시', adv('IV').fix === 'shuffle')
+check('III — 반의어 칸이 비었으면 표에서 채우기',
+  adv('III', { ...baseStats, withAntonyms: 0 }, { ...third, antonym: { got: 0, need: 2 } }).fix === 'fill' &&
+    adv('III', { ...baseStats, withAntonyms: 0 }, { ...third, antonym: { got: 0, need: 2 } }).text.startsWith('반의어가 달린 말 2개'),
+  adv('III', { ...baseStats, withAntonyms: 0 }, { ...third, antonym: { got: 0, need: 2 } }).text)
+check('V — 유의어 2개짜리가 모자라면 표에서 채우기', adv('V', { ...baseStats, withSynonyms2: 3 }).fix === 'fill')
+check('II — 형용사 · 부사가 모자라면 더 고르기', adv('II', { ...baseStats, adjAdv: 1 }).fix === 'more')
+check('I — 표제어 수 자체가 모자라면 더 고르기', adv('I', { ...baseStats, usable: 20 }, third, 3).fix === 'more' && adv('I', { ...baseStats, usable: 20 }, third, 3).text.includes('3개뿐'))
+check('VI — 수는 충분하면 배정 다시', adv('VI').fix === 'shuffle')
+
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)

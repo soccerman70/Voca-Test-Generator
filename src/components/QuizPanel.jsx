@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useStore, DOC_TITLE_MAX } from '../store.js'
-import { allocate, verbForm, FORM_LABEL, PARTS } from '../lib/quizAllocate.js'
+import { allocate, verbForm, FORM_LABEL, PARTS, shortageAdvice } from '../lib/quizAllocate.js'
 import { buildPartI, buildPartIV, renderPartIVItem } from '../lib/quizBuild.js'
 import { generateQuizParts } from '../lib/quizClient.js'
 import { downloadTest, downloadAnswers, testHeadParts } from '../lib/exportDocx.js'
@@ -95,12 +95,22 @@ function QuizBody({ quiz }) {
     quizHead,
     quizzes,
     quizBusy,
+    selections,
     addQuiz,
     updateQuiz,
     setQuizBusy,
+    setStep,
   } = useStore()
   const stats = useMemo(() => allocate(rows).stats, [rows])
   const { parts, shortages, thirdDetail, ok, context, gen } = quiz
+
+  // 못 채운 PART 마다 무엇이 모자라고 어떻게 채우는지. 화면은 처방(fix)을 모아 버튼을 고른다.
+  const advice = useMemo(
+    () => shortages.map((sh) => ({ sh, ...shortageAdvice(sh, stats, thirdDetail) })),
+    [shortages, stats, thirdDetail]
+  )
+  const fixes = new Set(advice.map((a) => a.fix))
+  const shortageId = `shortage-${quiz.id}`
 
   // 문항별로 앞뒤 문장을 몇 개까지 붙였는지. 맥락이 모자란지는 읽어봐야 알 수 있어 사람이 정한다.
   const adjust = (rowId, side, delta) =>
@@ -166,6 +176,57 @@ function QuizBody({ quiz }) {
 
   return (
     <>
+      {/*
+       * 위에 붙는 진행 막대. 4단계는 점검 → 배정 → PART IV → AI 문항 → 내보내기 순으로 길게 이어져
+       * 마지막 내려받기 버튼이 한참 아래에 있었다. 지금 어디까지 왔는지와 다음에 누를 것 하나만 늘 보인다.
+       */}
+      <div className="quiz-bar">
+        <ol className="qb-steps">
+          <li className={ok ? 'done' : 'warn'}>
+            <span className="qb-no">1</span>배정
+            <em>{ok ? `${stats.required}문항` : `${shortages.length}개 PART 모자람`}</em>
+          </li>
+          <li className={gen ? 'done' : genBusy ? 'busy' : ok ? 'now' : ''}>
+            <span className="qb-no">2</span>문항 만들기
+            {genBusy && genProgress && (
+              <em>
+                {genProgress.done}/{genProgress.total} PART
+              </em>
+            )}
+          </li>
+          <li className={gen ? 'now' : ''}>
+            <span className="qb-no">3</span>내려받기
+          </li>
+        </ol>
+        <div className="qb-action">
+          {!ok ? (
+            <button
+              className="btn sm"
+              onClick={() => document.getElementById(shortageId)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            >
+              모자란 PART 보기 ↓
+            </button>
+          ) : genBusy ? (
+            <span className="hint">
+              <span className="spinner dark" /> 문항을 만드는 중…
+            </span>
+          ) : !gen ? (
+            <button className="btn primary sm" onClick={runGenerate}>
+              문항 만들기
+            </button>
+          ) : (
+            <>
+              <button className="btn primary sm" onClick={() => save('test')} disabled={Boolean(saving)}>
+                {saving === 'test' ? <span className="spinner" /> : '⬇'} 시험지
+              </button>
+              <button className="btn sm" onClick={() => save('answers')} disabled={Boolean(saving)}>
+                {saving === 'answers' ? <span className="spinner dark" /> : '⬇'} 정답·해설지
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
       {/* 1. 단어장이 시험지를 감당할 수 있는지 */}
       <div className="panel">
         <div className="panel-title">
@@ -198,10 +259,55 @@ function QuizBody({ quiz }) {
           )}
 
           {!ok && (
-            <div className="notice-box">
-              <strong>{shortages.length}개 PART 가 문항 수를 못 채웠습니다.</strong>{' '}
-              {shortages.map((s) => `PART ${s.part} ${s.got}/${s.need}`).join(' · ')} — 배정을 다시 해 보거나,
-              표제어를 더 고른 뒤 다시 확정해주세요.
+            <div className="shortage-box" id={shortageId}>
+              <div>
+                <strong>{shortages.length}개 PART 가 문항 수를 못 채웠습니다.</strong>
+                {stats.usable < stats.required &&
+                  ` 시험지 한 장에 표제어가 ${stats.required}개 필요한데 지금 ${stats.usable}개입니다.`}
+              </div>
+              <ul className="shortage-list">
+                {advice.map(({ sh, text }) => (
+                  <li key={sh.part}>
+                    <b>
+                      PART {sh.part} {sh.got}/{sh.need}
+                    </b>{' '}
+                    {text}
+                  </li>
+                ))}
+              </ul>
+              <div className="shortage-actions">
+                {/*
+                 * 표제어를 더 고르는 길은 2단계 선택에서 표가 나온 경우에만 연다. 엑셀로 불러온 단어장은
+                 * 선택이 비어 있어, 2단계에서 몇 개 고르고 생성하면 표 전체가 새 결과로 바뀐다.
+                 */}
+                {fixes.has('more') &&
+                  (selections.length ? (
+                    <button className="btn sm" onClick={() => setStep('select')}>
+                      ② 표제어 더 고르기 →
+                    </button>
+                  ) : (
+                    <span className="hint">
+                      불러온 단어장이라 엑셀에서 줄을 더한 뒤 ③ 화면의 <strong>고친 엑셀 불러오기</strong>로 올리면
+                      됩니다.
+                    </span>
+                  ))}
+                {fixes.has('fill') && (
+                  <button className="btn sm" onClick={() => setStep('result')}>
+                    ③ 단어장 표에서 채우기 →
+                  </button>
+                )}
+                {/* 표제어 수 자체가 모자라면 배정을 다시 해도 채워지지 않으므로 권하지 않는다 */}
+                {fixes.has('shuffle') && stats.usable >= stats.required && (
+                  <button className="btn sm" onClick={reallocate} disabled={genBusy}>
+                    배정 다시 하기
+                  </button>
+                )}
+              </div>
+              {fixes.has('more') && selections.length > 0 && (
+                <p className="hint" style={{ margin: 0 }}>
+                  더 고른 뒤에는 생성 창에서 <strong>바뀐 표제어만 생성</strong>을 고르면 새로 고른 것만 만듭니다.
+                </p>
+              )}
             </div>
           )}
         </div>

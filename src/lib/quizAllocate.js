@@ -188,6 +188,70 @@ export function allocate(rows, { seed } = {}) {
   }
 }
 
+/**
+ * 문항 수를 못 채운 PART 하나에 대해 "무엇이 몇 개 모자라고, 어떻게 채우는지".
+ * 예전에는 "조건에 맞는 낱말이 없습니다" 한 줄이라 무엇을 해야 할지 알 수 없었다.
+ *
+ * fix 는 화면이 고를 처방이다.
+ * - more    : 그런 표제어가 단어장에 모자라다 → 표제어를 더 골라야 한다
+ * - fill    : 표제어는 있는데 칸(파생어 · 유의어 · 반의어)이 비었다 → 3단계 표에서 채울 수 있다
+ * - shuffle : 단어장에는 충분한데 다른 PART 와 겹쳐 모자랐다 → 배정을 다시 해 볼 만하다
+ *
+ * @param {{part: string, got: number, need: number}} shortage allocate 의 shortages 한 칸
+ * @param {ReturnType<typeof summarize>} stats
+ * @param {object} thirdDetail allocate 의 thirdDetail
+ * @returns {{ text: string, fix: 'more'|'fill'|'shuffle' }}
+ */
+export function shortageAdvice(shortage, stats, thirdDetail) {
+  const lack = (have, need) => Math.max(0, need - have)
+  const short = stats.usable < stats.required
+  switch (shortage.part) {
+    case 'IV':
+      return stats.verbs < 5
+        ? { text: `동사 표제어가 ${stats.verbs}개뿐입니다. ${lack(stats.verbs, 5)}개 더 있어야 합니다.`, fix: 'more' }
+        : { text: `동사는 ${stats.verbs}개 있지만 형태가 같은 말끼리 겹쳐 모자랐습니다.`, fix: 'shuffle' }
+    case 'III': {
+      const parts = []
+      let fill = false
+      for (const [key, name, have] of [
+        ['derivative', '파생어', stats.withDerivatives],
+        ['synonym', '유의어', stats.withSynonyms],
+        ['antonym', '반의어', stats.withAntonyms],
+      ]) {
+        const d = thirdDetail?.[key]
+        if (!d || d.got >= d.need) continue
+        parts.push(`${name}가 달린 말 ${d.need - d.got}개`)
+        if (have < d.need) fill = true
+      }
+      return {
+        text: `${parts.join(' · ') || '관계어가 달린 말'}가 더 필요합니다.${fill ? ' 3단계 표에서 그 칸을 채울 수 있습니다.' : ''}`,
+        fix: fill ? 'fill' : 'shuffle',
+      }
+    }
+    case 'II':
+      return stats.adjAdv < 5
+        ? { text: `형용사 · 부사 표제어가 ${stats.adjAdv}개뿐입니다. ${lack(stats.adjAdv, 5)}개 더 있어야 합니다.`, fix: 'more' }
+        : { text: `형용사 · 부사는 ${stats.adjAdv}개 있지만 앞 PART 가 먼저 썼습니다.`, fix: 'shuffle' }
+    case 'V':
+      return stats.withSynonyms2 < 5
+        ? {
+            text: `유의어가 2개 달린 표제어가 ${stats.withSynonyms2}개뿐입니다. 3단계 표에서 유의어를 채울 수 있습니다.`,
+            fix: 'fill',
+          }
+        : { text: `유의어가 2개 달린 말은 ${stats.withSynonyms2}개 있지만 앞 PART 가 먼저 썼습니다.`, fix: 'shuffle' }
+    default:
+      // VI · I 은 앞 PART 들이 쓰고 남은 말로 채운다 — 대개 표제어 수 자체가 모자란 것이다
+      return short
+        ? {
+            text: shortage.got
+              ? `앞 PART 들이 쓰고 남은 표제어가 ${shortage.got}개뿐입니다. 표제어가 더 있어야 합니다.`
+              : '앞 PART 들이 다 써서 남은 표제어가 없습니다. 표제어가 더 있어야 합니다.',
+            fix: 'more',
+          }
+        : { text: '앞 PART 들과 겹쳐 모자랐습니다.', fix: 'shuffle' }
+  }
+}
+
 /** 배정이 가능한지 미리 가늠하게 해주는 숫자들. 부족하면 어디가 모자란지 바로 보인다. */
 export function summarize(usable, all) {
   const byPos = {}

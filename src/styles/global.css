@@ -936,6 +936,100 @@ table.vocab td.num,
   font-size: 14px;
 }
 
+/*
+ * 지문이 들어온 뒤의 업로드 상자 — 한 줄짜리 "파일 추가" 막대. 큰 상자가 맨 위를 차지하면
+ * 지문 확인 · 설정 · 시작 버튼이 화면 밖으로 밀린다. 끌어다 놓기와 두 입구 버튼은 그대로 둔다.
+ */
+.dropzone.compact {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: var(--s-base);
+  min-height: 0;
+  padding: 12px var(--s-md);
+  border-radius: var(--r-lg);
+  text-align: left;
+}
+
+.dropzone.compact .dz-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.dropzone.compact .dz-text {
+  flex: 1;
+  max-width: none;
+}
+
+.dropzone.compact .dz-main {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dropzone.compact .dz-sub {
+  display: none;
+}
+
+.dropzone.compact .dz-actions {
+  flex-wrap: nowrap;
+}
+
+.dropzone.compact .dz-paste {
+  margin-top: 0;
+}
+
+/* 고급 설정 — 모델 · effort 를 직접 고르는 칸. 평소에는 접혀 있다 */
+details.advanced > summary {
+  cursor: pointer;
+  width: fit-content;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+details.advanced > summary:hover {
+  color: var(--ink);
+}
+
+details.advanced[open] > summary {
+  margin-bottom: var(--s-sm);
+}
+
+/*
+ * 1단계 시작 막대 — 화면 아래에 붙어 있다. 지문 목록이 길어도 무엇으로 시작하는지와 시작 버튼이
+ * 늘 보인다. 스크롤 상자(.setup) 안의 sticky 라 내용 위에 떠 있도록 흰 면과 그림자를 준다.
+ */
+.setup-footer {
+  position: sticky;
+  bottom: var(--s-base);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--s-md);
+  padding: 12px 12px 12px var(--s-md);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  background: var(--canvas);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.sf-summary {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--body);
+  word-break: keep-all;
+}
+
+.sf-summary strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.setup-footer .btn.cta {
+  flex: none;
+  height: 48px;
+}
+
 .import-body {
   display: flex;
   flex-direction: column;
@@ -2298,6 +2392,7 @@ table.vocab .mark {
 }
 
 /* 내용에 맞춰 높이가 늘어나는 셀 */
+/* 내용에 맞춰 높이가 늘어나는 셀 */
 textarea.cell-edit.auto {
   display: block;
   overflow: hidden;
@@ -2895,4 +2990,212 @@ table.quiz-preview td.qa {
 
 .wc-facts {
   margin: 0;
+}
+
+/*
+ * 4단계 진행 막대 — 스크롤 상자(.setup) 위쪽에 붙는다. 배정 → 문항 만들기 → 내려받기 중 어디까지 왔는지와
+ * 다음에 누를 것 하나만 보인다. 끝난 단계는 초록 점, 지금 할 단계는 파란 점, 막힌 단계는 붉은 점.
+ */
+.quiz-bar {
+  position: sticky;
+  top: var(--s-sm);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--s-md);
+  padding: 8px 10px 8px var(--s-md);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  background: var(--canvas);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.qb-steps {
+  display: flex;
+  align-items: center;
+  gap: var(--s-md);
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.qb-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.qb-steps li + li::before {
+  content: '→';
+  margin-right: var(--s-sm);
+  color: var(--muted-soft);
+}
+
+.qb-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-full);
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.qb-steps em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.qb-steps li.done,
+.qb-steps li.now,
+.qb-steps li.busy,
+.qb-steps li.warn {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.qb-steps li.done .qb-no {
+  background: var(--semantic-up);
+  color: #fff;
+}
+
+.qb-steps li.now .qb-no,
+.qb-steps li.busy .qb-no {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.qb-steps li.warn .qb-no {
+  background: var(--semantic-down);
+  color: #fff;
+}
+
+.qb-steps li.warn em {
+  color: var(--semantic-down);
+}
+
+.qb-action {
+  display: flex;
+  align-items: center;
+  gap: var(--s-xs);
+  flex: none;
+}
+
+/*
+ * 모자란 PART 처방. 무엇이 몇 개 모자라고 어디서 채우는지를 PART 마다 한 줄로,
+ * 그 아래에 바로 갈 수 있는 버튼을 둔다.
+ */
+.shortage-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--s-base) var(--s-md);
+  border: 1px solid #f0c36d;
+  border-radius: var(--r-md);
+  background: #fffaf0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--body);
+}
+
+.shortage-box strong {
+  color: var(--ink);
+}
+
+.shortage-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.shortage-list b {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.shortage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-xs);
+}
+
+.shortage-actions .btn:not(.primary) {
+  background: var(--canvas);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+/*
+ * 3단계 표 거르기 칩. 손볼 줄(누락 · 뜻 없음 · 원형으로 바뀜 …)만 골라 본다.
+ * 고른 칩만 진하게, 나머지는 옅은 면에 숫자를 붙여 "몇 줄이 해당하는지"를 먼저 읽게 한다.
+ */
+.row-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.rf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  background: var(--canvas);
+  color: var(--body);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rf-chip:hover {
+  border-color: var(--muted-soft);
+}
+
+.rf-chip.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+}
+
+.rf-count {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.rf-chip.on .rf-count {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.rf-passage {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  background: var(--canvas);
+  color: var(--body);
+  font: inherit;
+  font-size: 13px;
+}
+
+/* 거른 결과가 없을 때의 한 줄 */
+.rf-empty {
+  padding: 28px 16px !important;
+  text-align: center;
+  color: var(--muted);
 }

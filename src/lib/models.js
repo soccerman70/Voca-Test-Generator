@@ -35,3 +35,31 @@ export const EFFORTS = [
 export const DEFAULT_EFFORT = 'medium'
 
 export const isKnownEffort = (id) => EFFORTS.some((e) => e.id === id)
+
+/**
+ * 1단계에서 고르는 "AI 작업 방식". 선생님에게 모델 이름과 effort 는 낯선 말이라
+ * 둘을 묶어 세 가지로 보인다. 원래의 두 선택 칸은 "고급 설정" 안에 남는다.
+ * 보통이 기본값(DEFAULT_MODEL · DEFAULT_EFFORT)과 같아야 처음 켠 화면에서 "보통"이 골라져 있다.
+ */
+export const PRESETS = [
+  { id: 'fast', label: '빠르게', model: 'claude-sonnet-5-5', effort: 'low', note: 'Sonnet 5.5 · 짧게 생각합니다. 가장 빠릅니다.' },
+  { id: 'normal', label: '보통', model: DEFAULT_MODEL, effort: DEFAULT_EFFORT, note: 'Opus 5.5 · 기본값입니다.' },
+  {
+    id: 'careful',
+    label: '꼼꼼하게',
+    model: 'claude-opus-5-5',
+    effort: 'high',
+    note: 'Opus 5.5 · 더 오래 생각합니다. 가장 느립니다.',
+  },
+]
+
+/** 지금 모델 · effort 가 어느 묶음과 같은지. 고급 설정에서 따로 골랐으면 null */
+export const presetOf = (model, effort) => PRESETS.find((p) => p.model === model && p.effort === effort) ?? null
+
+/** 화면에 짧게 찍을 이름 — 묶음이면 그 이름, 아니면 "Opus 5.5 · high" */
+export function aiLabel(model, effort) {
+  const preset = presetOf(model, effort)
+  if (preset) return preset.label
+  const name = MODELS.find((m) => m.id === model)?.label.replace(/\s*\(.*\)$/, '') || model
+  return `${name} · ${effort}`
+}

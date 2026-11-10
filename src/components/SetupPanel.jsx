@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { extractText, fileKind, fetchGoogleFile } from '../lib/textExtract.js'
 import { splitMultiple, mergePassages, removePassage } from '../lib/passages.js'
-import { MODELS, EFFORTS } from '../lib/models.js'
+import { MODELS, EFFORTS, PRESETS, presetOf, aiLabel } from '../lib/models.js'
 import { downloadText } from '../lib/exportXlsx.js'
 import { readWordbook, compareWork } from '../lib/importXlsx.js'
 import { checkHealth } from '../lib/aiClient.js'
@@ -61,6 +61,7 @@ export default function SetupPanel() {
     sourceFiles,
     rows,
     selections,
+    lastUsage,
     loadPassages,
     loadWordbook,
     setPassages,
@@ -84,6 +85,9 @@ export default function SetupPanel() {
   // { name, rows, passages, docTitle, warnings }
   const [imported, setImported] = useState(null)
   const [health, setHealth] = useState(null)
+  // AI 작업 방식 — 묶음(빠르게 · 보통 · 꼼꼼하게)에 없는 조합이면 고급 설정을 펴 둔 채로 시작한다
+  const preset = presetOf(model, effort)
+  const [advancedOpen, setAdvancedOpen] = useState(() => !presetOf(model, effort))
   const inputRef = useRef(null)
   const wordbookRef = useRef(null)
 
@@ -226,11 +230,15 @@ export default function SetupPanel() {
   return (
     <div className="setup">
       <div className="setup-inner">
-        <WorkflowBanner />
+        {/* 처음 한 번 읽는 방향 안내. 지문이 들어오면 헤더의 단계 칩이 같은 일을 하므로 접는다 */}
+        {!passages.length && <WorkflowBanner />}
 
-        {/* 1. 파일 입력 */}
+        {/*
+         * 1. 파일 입력. 지문이 들어온 뒤에는 한 줄짜리 "파일 추가" 막대로 줄인다 — 큰 상자가 맨 위를
+         * 차지하면 지문 확인 · 설정 · 시작 버튼이 화면 밖으로 밀린다. 끌어다 놓기는 그대로 된다.
+         */}
         <div
-          className={`dropzone${dragOver ? ' over' : ''}`}
+          className={`dropzone${dragOver ? ' over' : ''}${passages.length ? ' compact' : ''}`}
           onDragOver={(e) => {
             e.preventDefault()
             setDragOver(true)
@@ -278,8 +286,8 @@ export default function SetupPanel() {
               </div>
               <div className="dz-text">
                 <div className="dz-main">
-                  {sourceFiles.length
-                    ? `파일을 더 끌어다 놓으면 뒤에 추가됩니다 (현재 ${sourceFiles.length}개)`
+                  {passages.length
+                    ? `파일 더 올리기 — 끌어다 놓거나 클릭 (지금 ${sourceFiles.length ? `파일 ${sourceFiles.length}개 · ` : ''}지문 ${passages.length}개)`
                     : '지문 파일을 여기에 끌어다 놓거나 클릭해서 고르세요'}
                 </div>
                 <div className="dz-sub">
@@ -606,27 +614,61 @@ export default function SetupPanel() {
                 </div>
 
                 <div className="field">
-                  <label htmlFor="model">AI 모델</label>
-                  <select id="model" value={model} onChange={(e) => setModel(e.target.value)}>
-                    {MODELS.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
+                  <label>AI 작업 방식</label>
+                  <div className="mode-toggle">
+                    {PRESETS.map((p) => (
+                      <button
+                        key={p.id}
+                        className={preset?.id === p.id ? 'on' : ''}
+                        onClick={() => {
+                          setModel(p.model)
+                          setEffort(p.effort)
+                        }}
+                      >
+                        {p.label}
+                      </button>
                     ))}
-                  </select>
-                </div>
-
-                <div className="field">
-                  <label htmlFor="effort">생각 깊이 (effort)</label>
-                  <select id="effort" value={effort} onChange={(e) => setEffort(e.target.value)}>
-                    {EFFORTS.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {e.label}
-                      </option>
-                    ))}
-                  </select>
+                  </div>
                 </div>
               </div>
+
+              <p className="hint" style={{ margin: 0 }}>
+                {preset ? preset.note : `고급 설정에서 직접 골랐습니다 — ${aiLabel(model, effort)}.`} 자동 추출 · 단어장 생성
+                · 시험지 문항 생성에 모두 쓰입니다.
+                {lastUsage?.durationMs > 0 &&
+                  ` 지난번 단어장 생성은 표제어 ${rows.length}개에 ${Math.round(lastUsage.durationMs / 1000)}초 걸렸습니다.`}
+              </p>
+
+              <details
+                className="advanced"
+                open={advancedOpen}
+                onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}
+              >
+                <summary>고급 설정 — 모델 · 생각 깊이 직접 고르기</summary>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="model">AI 모델</label>
+                    <select id="model" value={model} onChange={(e) => setModel(e.target.value)}>
+                      {MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="effort">생각 깊이 (effort)</label>
+                    <select id="effort" value={effort} onChange={(e) => setEffort(e.target.value)}>
+                      {EFFORTS.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </details>
 
               <p className="hint" style={{ margin: 0 }}>
                 {mode === 'manual'
@@ -635,13 +677,23 @@ export default function SetupPanel() {
               </p>
 
               <HealthLine health={health} />
-
-              <div>
-                <button className="btn primary cta" onClick={() => setStep('select')}>
-                  {mode === 'manual' ? '표제어 선택 시작' : 'AI 추출 화면으로'} →
-                </button>
-              </div>
             </div>
+          </div>
+        )}
+
+        {/*
+         * 시작 버튼은 화면 아래에 고정한다. 지문이 많으면 지문 확인 목록이 길어 설정 칸 아래의 버튼이
+         * 한참 밑으로 밀렸다. 고른 설정을 한 줄로 함께 보여 무엇으로 시작하는지 확인하게 한다.
+         */}
+        {passages.length > 0 && (
+          <div className="setup-footer">
+            <span className="sf-summary">
+              지문 <strong>{passages.length}개</strong> · 표제어 <strong>{targetCount}개</strong> ·{' '}
+              {mode === 'manual' ? '직접 선택' : 'AI 자동 추출'} · AI <strong>{aiLabel(model, effort)}</strong>
+            </span>
+            <button className="btn primary cta" onClick={() => setStep('select')}>
+              {mode === 'manual' ? '표제어 선택 시작' : 'AI 추출 화면으로'} →
+            </button>
           </div>
         )}
       </div>

@@ -75,15 +75,29 @@ export default function ResultTable() {
     [imported, rows, selections, passages, docTitle]
   )
 
-  const issues = useMemo(
-    () => ({
-      missing: rows.filter((r) => r.missing).length,
-      noSynonym: rows.filter((r) => !r.synonyms.length).length,
-      noMeaning: rows.filter((r) => !r.meaning).length,
-      changed: rows.filter((r) => r.normalizationNote).length,
-    }),
+  /*
+   * 검수용 거르기. 칩마다 지금 해당하는 줄 수를 세고, 누르면 그 순간의 줄 목록을 고정해 보여준다.
+   * 목록을 고정하는 이유 — "뜻 없음"으로 거른 채 뜻을 치면 그 줄이 조건에서 빠져 치는 도중에 사라진다.
+   * 칩을 다시 누르면 지금 상태로 새로 거른다.
+   */
+  const filterCounts = useMemo(
+    () => Object.fromEntries(ROW_FILTERS.map((f) => [f.key, rows.filter(f.test).length])),
     [rows]
   )
+  const [rowFilter, setRowFilter] = useState('all')
+  const [filterIds, setFilterIds] = useState(null) // 고정한 줄 id. null 이면 전체
+  const [passageFilter, setPassageFilter] = useState('')
+  const passageLabels = useMemo(() => [...new Set(rows.map(passageOf))], [rows])
+  const pickFilter = (key) => {
+    const def = ROW_FILTERS.find((f) => f.key === key)
+    setRowFilter(key)
+    setFilterIds(key === 'all' ? null : new Set(rows.filter(def.test).map((r) => r.id)))
+  }
+  // 번호는 표 전체에서의 번호 그대로 둔다 — 거르기는 보기만 바꾸고 엑셀 · 시험지는 언제나 표 전체다
+  const shown = rows
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => (!filterIds || filterIds.has(r.id)) && (!passageFilter || passageOf(r) === passageFilter))
+  const filtering = Boolean(filterIds || passageFilter)
 
   const handleDownload = async () => {
     setSaving(true)
@@ -138,9 +152,6 @@ export default function ResultTable() {
             {antonymStats.removed > 0 && ` · 비율 초과분 ${antonymStats.removed}개 정리됨`}
           </span>
         )}
-        {issues.noMeaning > 0 && <span className="hint">뜻 없음 {issues.noMeaning}개</span>}
-        {issues.noSynonym > 0 && <span className="hint">유의어 없음 {issues.noSynonym}개</span>}
-        {issues.changed > 0 && <span className="hint">원형으로 바뀐 표제어 {issues.changed}개</span>}
         {confirmedAt && <span className="confirm-tag">확정됨 {formatStamp(confirmedAt)}</span>}
         {appliedName && <span className="hint">{appliedName} 반영됨</span>}
         <span className="grow" />
@@ -221,13 +232,49 @@ export default function ResultTable() {
           </div>
         </div>
       )}
-      {issues.missing > 0 && (
+      {filterCounts.missing > 0 && (
         <div className="notice-box">
-          AI 응답에서 {issues.missing}개 항목이 누락되어 원래 선택 그대로 채웠습니다 (아래 노란 줄). 해당 줄만 직접
+          AI 응답에서 {filterCounts.missing}개 항목이 누락되어 원래 선택 그대로 채웠습니다 (아래 노란 줄). 해당 줄만 직접
           채우거나, 선택 화면으로 돌아가 생성 창에서 <strong>바뀐 표제어만 생성</strong>을 고르면 이 줄들만 다시
           만듭니다.
         </div>
       )}
+
+      {/* 손볼 줄만 골라 보기. 해당하는 줄이 없는 칩은 숨긴다 */}
+      <div className="row-filters" role="toolbar" aria-label="표 거르기">
+        {ROW_FILTERS.filter((f) => f.key === 'all' || filterCounts[f.key] > 0 || f.key === rowFilter).map((f) => (
+          <button
+            key={f.key}
+            className={`rf-chip${rowFilter === f.key ? ' on' : ''}`}
+            onClick={() => pickFilter(f.key)}
+            title={f.key === 'all' ? '모든 줄을 봅니다' : `${f.label}인 줄만 봅니다. 다시 누르면 지금 상태로 새로 거릅니다`}
+          >
+            {f.label}
+            <span className="rf-count">{filterCounts[f.key]}</span>
+          </button>
+        ))}
+        {passageLabels.length > 1 && (
+          <select
+            className="rf-passage"
+            value={passageFilter}
+            onChange={(e) => setPassageFilter(e.target.value)}
+            aria-label="지문으로 거르기"
+          >
+            <option value="">지문 전체</option>
+            {passageLabels.map((label) => (
+              <option key={label} value={label}>
+                지문 {label}
+              </option>
+            ))}
+          </select>
+        )}
+        {filtering && (
+          <span className="hint">
+            {rows.length}줄 중 {shown.length}줄을 보고 있습니다
+            {filterIds && ' · 고친 줄도 이 보기에서 빠지지 않습니다'}
+          </span>
+        )}
+      </div>
 
       <div className="table-wrap">
         <table className="vocab">
@@ -246,7 +293,23 @@ export default function ResultTable() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
+            {filtering && !shown.length && (
+              <tr>
+                <td colSpan={10} className="rf-empty">
+                  이 조건에 맞는 줄이 없습니다.{' '}
+                  <button
+                    className="btn ghost sm link"
+                    onClick={() => {
+                      pickFilter('all')
+                      setPassageFilter('')
+                    }}
+                  >
+                    모든 줄 보기
+                  </button>
+                </td>
+              </tr>
+            )}
+            {shown.map(({ r, i }) => (
               <tr key={r.id} className={r.missing ? 'row-warn' : undefined}>
                 <td className="num">{i + 1}</td>
                 <td className="headword">
@@ -332,6 +395,22 @@ export default function ResultTable() {
     </div>
   )
 }
+
+/**
+ * 3단계 검수용 거르기. 100줄을 위에서부터 다 보지 않고 손볼 줄만 골라 본다.
+ * edited 는 store 의 updateRow 가 표에서 칸을 고칠 때 남긴다.
+ */
+const ROW_FILTERS = [
+  { key: 'all', label: '전체', test: () => true },
+  { key: 'missing', label: 'AI 누락', test: (r) => Boolean(r.missing) },
+  { key: 'noMeaning', label: '뜻 없음', test: (r) => !String(r.meaning || '').trim() },
+  { key: 'noSynonym', label: '유의어 없음', test: (r) => !(r.synonyms || []).length },
+  { key: 'changed', label: '원형으로 바뀜', test: (r) => Boolean(r.normalizationNote) },
+  { key: 'antonym', label: '반의어 있음', test: (r) => (r.antonyms || []).length > 0 },
+  { key: 'edited', label: '내가 고친 줄', test: (r) => Boolean(r.edited) },
+]
+
+const passageOf = (r) => String(r.passageLabel ?? r.passageNo)
 
 /** 되돌리기를 띄워 두는 시간 */
 const UNDO_MS = 7000
