@@ -653,6 +653,8 @@ const withOthers = buildEnrichPrompt({ items: promptItem, others: ['blunted', 'd
 check('다른 표제어 목록이 프롬프트에 실린다', withOthers.includes('## 7)') && withOthers.includes('blunted, diminished'))
 check('목록이 없으면 그 절도 없다', !buildEnrichPrompt({ items: promptItem }).includes('## 7)'))
 check('유의어는 고3 수준까지 · 되도록 2개', withOthers.includes('되도록 2개') && withOthers.includes('고3'))
+// 파생어는 "기본 1개" 로 줄였다가 너무 적다는 말에 되돌렸다 — 흔한 가족 말이 둘이면 2개 (speculate · speculative)
+check('파생어 — 흔한 말이 2개 있으면 2개', withOthers.includes('2개 있으면 2개를 단다') && !withOthers.includes('기본은 1개'))
 
 /* 18. 시험지 검수 반영 (Week 09) ----------------------------------- */
 console.log('\n[18] 시험지 검수 반영 — 요약문 빼기 · 선택지 난이도 · 이야기 틀 · 힌트')

@@ -186,8 +186,10 @@ ${others.join(', ')}`
 - 이 경우 pos는 "어구"로 하고, 파생어는 빈 배열로 둔다.
 
 ## 2) 파생어(derivatives)
-- **기본은 1개**, 둘 다 흔하고 학생에게 유용할 때만 2개. 알맞은 것이 없으면 빈 배열이 정상이다.
-  **망설여지는 말은 넣지 마라** — 파생어는 적어도 되지만 틀리거나 드문 말이 들어가면 안 된다.
+- **최대 2개. 흔히 쓰는 같은 가족 말이 2개 있으면 2개를 단다.**
+  (speculation → speculate, speculative · deliberately → deliberate, deliberation · innovate → innovation, innovative)
+  알맞은 말이 1개뿐이면 1개, 없으면 빈 배열이다. 다만 개수를 채우려고 드물거나 억지스러운 말을 넣지는 마라 —
+  아래 '파생어가 아닌 것' · '드문 꼴' 규칙은 그대로 지킨다.
 - 파생어는 표제어와 **어간을 함께 쓰는 같은 단어 가족의 말**로, 접미사를 바꾸거나 떼어 품사가 달라진 것이다.
   기본형으로 돌아가는 것도 된다 (deliberately → deliberate ✓, accommodation → accommodate ✓, substantive → substance ✓,
   blunted → blunt ✓, connotation → connote ✓). 아래만 파생어가 아니다.
