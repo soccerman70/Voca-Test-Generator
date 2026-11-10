@@ -15,6 +15,7 @@ import {
   buildPartIIPrompt,
   buildPartIIIPrompt,
   buildPartVPrompt,
+  buildPartVCheckPrompt,
   buildPartVIPrompt,
 } from './quizPrompts.js'
 
@@ -233,6 +234,8 @@ const routes = {
       II: buildPartIIPrompt,
       III: buildPartIIIPrompt,
       V: buildPartVPrompt,
+      // 만든 PART V 를 정답 없이 다시 풀려 복수 정답을 점검한다
+      VCHECK: buildPartVCheckPrompt,
       VI: buildPartVIPrompt,
     }[String(part)]
 

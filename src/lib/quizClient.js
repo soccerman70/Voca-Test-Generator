@@ -11,7 +11,14 @@
 import { inflectionKey } from './duplicates.js'
 import { apiBase } from './aiClient.js'
 import { countWords, shuffleChoices } from './quizBuild.js'
-import { isBeyondExamDistractor, storyPatternIssues, uniqueHint, STORY_OPENINGS, STORY_ENDINGS } from './quizRules.js'
+import {
+  isBeyondExamDistractor,
+  storyPatternIssues,
+  uniqueHint,
+  STORY_OPENINGS,
+  STORY_ENDINGS,
+  CHOICE_ROLES,
+} from './quizRules.js'
 
 export const QUIZ_PARTS = ['II', 'III', 'V', 'VI']
 
@@ -184,7 +191,7 @@ function checkV(result) {
   if (items.length !== 5) issues.push(`문항이 ${items.length}개 (5개여야 함)`)
 
   const counts = []
-  for (const it of items) {
+  items.forEach((it, index) => {
     const n = countWords(it.sentence)
     if (n < 20 || n > 45) issues.push(`${n}단어 문장 (25~40 권장)`)
     const blanks = (String(it.sentence || '').match(/_{5,}/g) || []).length
@@ -201,19 +208,41 @@ function checkV(result) {
     const rare = wrong.filter(isBeyondExamDistractor)
     if (rare.length) issues.push(`오답 ${rare.join(', ')} — 수능 범위를 넘는 드문 말`)
 
-    // 오답이 모두 반대 뜻이면 뜻의 방향만 보고 풀린다
+    if (answers.length > 3) issues.push(`정답이 ${answers.length}개인 문항이 있음 (1~3개)`)
+
+    /*
+     * 오답이 모두 반대 방향이면 쉬운 반대말을 지우고 남은 것을 다 고르면 풀린다(시험지 검수 06-30 · 07-26).
+     * 버리는 오답(반대 방향 쉬운 말) 1개 이상, 근접 오답(같은 방향 · 비슷한 형태) 정확히 1개.
+     */
+    const no = `${26 + index}번`
     const roles = Array.isArray(it.roles) ? it.roles : []
-    if (roles.length === 5) {
-      const mismatch = roles.some((r, k) => (r === '정답') !== answers.includes(k + 1))
-      if (mismatch) issues.push(`${(it.choices || []).join('/')} — 정답 번호와 선택지 표시(roles)가 어긋남`)
-      const opposite = roles.filter((r) => r === '반대').length
-      if (opposite > 2) issues.push(`오답 ${opposite}개가 반대 뜻 (많아야 2개)`)
+    if (roles.length !== 5) {
+      issues.push(`${no} — 선택지 표시(roles)가 없음`)
+    } else {
+      if (roles.some((r, k) => (r === '정답') !== answers.includes(k + 1))) {
+        issues.push(`${no} — 정답 번호와 선택지 표시(roles)가 어긋남`)
+      }
+      if (roles.some((r) => !CHOICE_ROLES.includes(r))) issues.push(`${no} — 모르는 선택지 표시(${roles.join('·')})`)
+      if (!roles.includes('버림')) issues.push(`${no} — 버리는 오답이 없음`)
+      const near = roles.filter((r) => r === '근접').length
+      if (near !== 1) issues.push(`${no} — 근접 오답이 ${near}개 (1개여야 함)`)
     }
-  }
+
+    // 정답해설에 오답마다 틀린 이유를 한 마디씩 싣는다
+    const reasons = Array.isArray(it.reasons) ? it.reasons : []
+    const missing = (it.choices || []).filter((_, k) => !answers.includes(k + 1) && !String(reasons[k] || '').trim())
+    if (missing.length) issues.push(`${no} — 틀린 이유가 없는 오답: ${missing.join(', ')}`)
+
+    // 출제 뒤 정답 없이 다시 풀어 본 결과 — 오답을 답으로 고르거나 애매하다고 했으면 다른 정답으로 읽힐 여지가 있다
+    issues.push(...answerCheckIssues(it, no))
+  })
 
   if (counts.length && new Set(counts).size < 2) {
     issues.push(`정답 개수가 ${counts.join('·')} 로 흩어지지 않음 (1~3개로 섞여야 함)`)
   }
+  // 고난도는 5문항 가운데 1~2문항 (20~30%)
+  const hard = items.filter((it) => it.hard === true).length
+  if (items.length && (hard < 1 || hard > 2)) issues.push(`고난도 문항이 ${hard}개 (1~2개)`)
   return issues
 }
 
@@ -244,6 +273,37 @@ function checkVI(result, payload) {
 
 const CHECK = { II: checkII, III: checkIII, V: checkV, VI: checkVI }
 
+/**
+ * PART V 복수 정답 점검 결과(it.answerCheck)를 정답과 견준다.
+ * - 오답을 fits 로 골랐다 → 다른 정답으로 읽힌다
+ * - 오답을 doubtful 로 짚었다 → 답으로 읽힐 여지가 있다
+ * - 정답을 fits 에서 뺐다 → 정답이 문맥에 약하다
+ */
+export function answerCheckIssues(it, no) {
+  const check = it.answerCheck
+  if (!check) return []
+  if (check.error) return [`${no} — 복수 정답 점검 실패 (${check.error})`]
+  const answers = it.answers || []
+  const choice = (n) => `${'①②③④⑤'[n - 1] || n} ${(it.choices || [])[n - 1] ?? ''}`
+  const out = []
+  for (const n of check.fits || []) {
+    if (!answers.includes(n)) out.push(`${no} — ${choice(n)} 도 답으로 읽힘 (다시 풀어 본 결과)`)
+  }
+  for (const d of check.doubtful || []) {
+    if (!answers.includes(d.choice)) out.push(`${no} — ${choice(d.choice)} 가 답으로 읽힐 여지: ${d.why || ''}`)
+  }
+  for (const n of answers) {
+    if ((check.fits || []).includes(n)) continue
+    // 정답을 애매하다고 했으면 그 이유를 붙인다 — 정답이 문맥에 약하다는 뜻이다
+    const doubt = (check.doubtful || []).find((d) => d.choice === n)
+    out.push(`${no} — 정답 ${choice(n)} 를 다시 풀 때 ${doubt ? `확신하지 못함: ${doubt.why}` : '고르지 않음'}`)
+  }
+  return out
+}
+
+/** 받은 PART 하나를 검사한다 — 점검 도구와 스모크 테스트가 쓴다 */
+export const checkPart = (part, result, payload) => CHECK[part](result, payload)
+
 /** PART 를 넘나드는 중복. 한 PART 안에서는 배정 단계에서 이미 막았다. */
 function crossCheck(byPart) {
   const issues = []
@@ -268,6 +328,36 @@ function crossCheck(byPart) {
   for (const b of byPart.VI?.result?.blanks || []) note(b.answer, 'PART VI 정답')
 
   return issues
+}
+
+/**
+ * 만든 PART V 를 정답을 알려 주지 않고 AI 에게 다시 풀게 해, 문항마다 answerCheck 를 붙인다.
+ * 점검이 실패해도 문항은 살린다 — 실패한 사실을 answerCheck.error 로 남겨 검사에 짚는다.
+ */
+export async function checkPartVAnswers(result, { model, effort }) {
+  const items = (result?.items || []).filter((it) => Array.isArray(it.choices) && it.choices.length)
+  if (!items.length) return result
+  try {
+    const { result: checked } = await post({
+      part: 'VCHECK',
+      payload: { items: items.map((it, i) => ({ id: String(it.id ?? i), sentence: it.sentence, choices: it.choices })) },
+      model,
+      effort,
+    })
+    const byId = new Map((checked?.items || []).map((c) => [String(c.id), c]))
+    items.forEach((it, i) => {
+      const c = byId.get(String(it.id ?? i))
+      it.answerCheck = c
+        ? {
+            fits: (c.fits || []).map(Number).filter((n) => n >= 1 && n <= 5),
+            doubtful: (c.doubtful || []).filter((d) => d && Number(d.choice) >= 1).map((d) => ({ choice: Number(d.choice), why: String(d.why || '') })),
+          }
+        : { error: '점검 결과에 이 문항이 없음' }
+    })
+  } catch (err) {
+    for (const it of items) it.answerCheck = { error: err.message }
+  }
+  return result
 }
 
 /* ------------------------------------------------------------------ */
@@ -300,6 +390,8 @@ export async function generateQuizParts({ parts, model, effort, startNo = 31, on
       try {
         const { result, usage, durationMs } = await post({ part, payload: payloads[part], model, effort })
         if (part === 'III') resolveHints(result, payloads.III)
+        // PART V 는 만든 뒤 정답 없이 한 번 더 풀어 복수 정답을 점검한다 (시험지 검수 기준)
+        if (part === 'V') await checkPartVAnswers(result, { model, effort })
         byPart[part] = {
           result,
           usage,

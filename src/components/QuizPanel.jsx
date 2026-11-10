@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useStore, DOC_TITLE_MAX } from '../store.js'
 import { allocate, verbForm, FORM_LABEL, PARTS, shortageAdvice } from '../lib/quizAllocate.js'
 import { buildPartI, buildPartIV, renderPartIVItem } from '../lib/quizBuild.js'
-import { generateQuizParts } from '../lib/quizClient.js'
-import { downloadTest, downloadAnswers, testHeadParts } from '../lib/exportDocx.js'
+import { generateQuizParts, answerCheckIssues } from '../lib/quizClient.js'
+import { downloadTest, downloadAnswers, testHeadParts, wrongReasons } from '../lib/exportDocx.js'
 import { DEFAULT_TITLE } from '../lib/exportXlsx.js'
 
 let quizSeq = 0
@@ -683,16 +683,36 @@ function PartBody({ partKey, result, choices }) {
           <div key={it.id || i} className="qgen-block">
             <p className="qgen-line">{it.sentence}</p>
             <p className="qgen-line dim">
+              {it.hard && <span className="qgen-tag">고난도</span>}
               {(it.choices || []).map((c, k) => {
                 const isAnswer = (it.answers || []).includes(k + 1)
+                // 정답은 파랑, 버리는 선지는 흐리게 — 근접 오답이 무엇인지 한눈에 보이게
+                const role = (it.roles || [])[k]
+                const style = isAnswer
+                  ? { color: 'var(--primary)', fontWeight: 600 }
+                  : role === '버림'
+                    ? { textDecoration: 'line-through' }
+                    : undefined
                 return (
-                  <span key={k} style={isAnswer ? { color: 'var(--primary)', fontWeight: 600 } : undefined}>
+                  <span key={k} style={style} title={role ? `${role}${role === '버림' ? ' (반대 방향 쉬운 말)' : role === '근접' ? ' 오답' : ''}` : undefined}>
                     {`①②③④⑤`[k]} {c}
                     {'   '}
                   </span>
                 )
               })}
             </p>
+            <p className="qgen-line dim">오답 {wrongReasons(it) || it.wrongWhy}</p>
+            {it.answerCheck && (
+              <p className="qgen-line dim">
+                {/* 만든 뒤 정답 없이 다시 풀어 본 결과. 걸린 것은 PART 머리의 검사 목록에도 뜬다 */}
+                복수 정답 점검 —{' '}
+                {it.answerCheck.error
+                  ? `실패 (${it.answerCheck.error})`
+                  : answerCheckIssues(it, '').length
+                    ? '걸림 (위 검사 목록 참고)'
+                    : '통과'}
+              </p>
+            )}
             <p className="qgen-line dim">단서 {(it.clues || []).join(' · ')}</p>
           </div>
         ))}

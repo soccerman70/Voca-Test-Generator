@@ -94,6 +94,19 @@ function headWidth(text, pt = 10) {
 }
 
 /**
+ * PART V 정답해설의 "오답" 줄 — `① enemy — 반대 방향 … / ③ acquaintance — …`.
+ * 오답마다 틀린 이유를 한 마디씩 싣는다(시험지 검수 기준). reasons 가 없으면 빈 문자열.
+ */
+export function wrongReasons(it) {
+  const answers = it.answers || []
+  const reasons = Array.isArray(it.reasons) ? it.reasons : []
+  return (it.choices || [])
+    .map((c, k) => (answers.includes(k + 1) || !String(reasons[k] || '').trim() ? '' : `${'①②③④⑤'[k]} ${c} — ${String(reasons[k]).trim()}`))
+    .filter(Boolean)
+    .join(' / ')
+}
+
+/**
  * 시험지 머리 왼쪽 글 — `2026 {단어장 제목} 3반` 과 `Week 5`.
  * 연도 · 반 · 주차를 ④ 화면에서 채우면 그 값을, 비워 두면 손으로 쓸 빈칸을 넣는다.
  * 화면의 머리 미리보기와 docx 가 같은 글을 쓰도록 여기 하나만 둔다.
@@ -512,7 +525,8 @@ export function buildAnswerDoc(data) {
       const answers = (it.answers || []).map((n) => `${marks[n - 1]} ${(it.choices || [])[n - 1]}`).join(', ')
       children.push(
         ...card(26 + i, `정답 ${(it.answers || []).length}개 — ${answers}`, [
-          ['오답', it.wrongWhy],
+          // 오답마다 틀린 이유 한 마디 (버리는 오답 · 근접 오답 모두). 예전 결과는 wrongWhy 한 줄이다
+          ['오답', wrongReasons(it) || it.wrongWhy],
           ['단서', (it.clues || []).join(' · ')],
           ['해석', it.translation],
         ])

@@ -18,10 +18,20 @@ export const BEYOND_EXAM_DISTRACTORS = [
   'mendicant', 'vassal', 'junta', 'placatory', 'indemnity', 'lapse into oblivion', 'recede from prominence',
 ]
 
-/** 수능 수준 오답의 예 — 프롬프트에 ✓ 로 싣는다 */
-export const EXAM_LEVEL_DISTRACTOR_EXAMPLES = [
-  'adversary', 'hostility', 'stagnation', 'indifference', 'surrender', 'deteriorate', 'neglect', 'overlook', 'hinder', 'abandon',
+/**
+ * PART V 근접 오답의 예 — 시험지 검수(Week 06~09)가 낸 것. 프롬프트에 그대로 싣는다.
+ * 오답이 모두 반대 방향이라 "쉬운 반대말을 지우고 남은 것을 다 고르면" 풀렸다(06-30 · 07-26).
+ * 선생님 기준: 버리는 선지는 1개, 오답이 모두 같은 방향이면 답이 드러난다.
+ */
+export const NEAR_DISTRACTOR_EXAMPLES = [
+  { answer: 'ward off · fend off · repel', near: 'put off', why: "같은 off 구동사지만 '연기하다' 라는 뜻이라 막아 낸다는 뜻이 아니다" },
+  { answer: '(보험) premium', near: 'tax', why: '내는 돈이지만 보험사가 걷는 돈이 아니다' },
+  { answer: 'havoc · chaos (금융망에 일으키는 혼란)', near: 'panic', why: '혼란 계열이지만 금융망은 공황에 빠지는 주체가 아니다' },
+  { answer: 'a flash of insight · inspiration (돌파구의 원천)', near: 'memory', why: "a flash of 는 되지만 '돌파구의 원천' 이라는 문맥에 맞지 않는다" },
 ]
+
+/** PART V 선택지 역할 — 정답 · 버리는 선지(반대 방향 쉬운 말, 문항마다 1개) · 근접 오답 */
+export const CHOICE_ROLES = ['정답', '버림', '근접']
 
 const keyOf = (word) => {
   const w = String(word || '').toLowerCase().replace(/\s+/g, ' ').trim()

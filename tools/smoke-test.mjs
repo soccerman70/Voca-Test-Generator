@@ -733,9 +733,55 @@ check('이야기 — 장면으로 끝나면 통과', storyPatternIssues('At five
 const { buildPartIIIPrompt, buildPartVPrompt, buildPartVIPrompt } = await import('../server/quizPrompts.js')
 const qItem = { id: 'q', headword: 'stretch', pos: '동', meaning: '늘이다' }
 const vPrompt = buildPartVPrompt({ items: [{ ...qItem, synonyms: ['extend', 'lengthen'], antonyms: ['shrink'] }] })
-check('PART V — 선택지는 고3 수준 · 수능을 넘는 말 목록이 실린다', vPrompt.includes('고3(수능) 수준에 맞춘다') && vPrompt.includes('mendicant') && !vPrompt.includes('고2'))
-check('PART V — 반대 뜻 오답은 많아야 2개 · roles 를 받는다', vPrompt.includes('많아야 2개') && vPrompt.includes('"roles"'))
-check('PART V — "쉬운 단어를 쓰지 마라" 는 없다', !vPrompt.includes('쉬운 단어를 쓰지 마라'))
+check('PART V — 선택지 낱말은 고3 이내 · 수능을 넘는 말 목록이 실린다', vPrompt.includes('고3(수능) 수준 이내') && vPrompt.includes('mendicant') && !vPrompt.includes('고2'))
+// 시험지 검수: 오답이 모두 반대 방향이라 쉬운 반대말을 지우면 풀렸다 → 버리는 오답 1개 이상 + 근접 오답 정확히 1개
+check('PART V — 버리는 오답 1개 이상 · 근접 오답 정확히 1개 · 검수 예시가 실린다',
+  vPrompt.includes('문항마다 1개 이상') && vPrompt.includes('문항마다 정확히 1개') && vPrompt.includes('put off') && vPrompt.includes('"버림"'))
+check('PART V — 근접 오답은 같은 방향 · 비슷한 형태, 문맥 · 연어 · 사실관계로 틀림', vPrompt.includes('형태가 비슷하지만') && vPrompt.includes('사실관계'))
+check('PART V — 오답마다 틀린 이유(reasons)를 받는다', vPrompt.includes('"reasons"') && !vPrompt.includes('"wrongWhy"'))
+check('PART V — 고난도 1~2문항을 hard 로 받는다', vPrompt.includes('고난도 문항 1~2개') && vPrompt.includes('"hard"'))
+check('PART V — "쉬운 단어를 쓰지 마라" · "반대 방향 2개까지" 는 없다', !vPrompt.includes('쉬운 단어를 쓰지 마라') && !vPrompt.includes('많아야 2개'))
+
+const { checkPart, answerCheckIssues } = await import('../src/lib/quizClient.js')
+const vItem = (roles, answers, hard = false) => ({
+  sentence: `The ${'word '.repeat(26)}_______________ here.`,
+  choices: ['a', 'b', 'c', 'd', 'e'],
+  answers,
+  roles,
+  reasons: roles.map((r) => (r === '정답' ? '' : '이유')),
+  hard,
+  clues: ['x', 'y'],
+  answerCheck: { fits: answers, doubtful: [] },
+})
+const goodV = { items: [
+  vItem(['버림', '정답', '근접', '정답', '정답'], [2, 4, 5], true),
+  vItem(['정답', '버림', '근접', '버림', '정답'], [1, 5]),
+  vItem(['버림', '정답', '버림', '근접', '버림'], [2]),
+  vItem(['정답', '근접', '버림', '정답', '버림'], [1, 4]),
+  vItem(['근접', '정답', '정답', '버림', '정답'], [2, 3, 5], true),
+] }
+check('PART V 검사 — 버림 1+ · 근접 1 · 이유 · 점검 통과 · 고난도 2 이면 걸리지 않는다', checkPart('V', goodV).length === 0, checkPart('V', goodV).join(' · '))
+const allOpposite = { items: goodV.items.map((it, i) => (i === 2 ? { ...it, roles: ['버림', '정답', '버림', '버림', '버림'] } : it)) }
+check('PART V 검사 — 근접 오답이 없으면(모두 반대 방향) 짚는다', checkPart('V', allOpposite).some((x) => x.includes('28번 — 근접 오답이 0개')))
+const twoNear = { items: goodV.items.map((it, i) => (i === 1 ? { ...it, roles: ['정답', '근접', '근접', '버림', '정답'] } : it)) }
+check('PART V 검사 — 근접 오답이 2개면 짚는다', checkPart('V', twoNear).some((x) => x.includes('27번 — 근접 오답이 2개')))
+const noReason = { items: goodV.items.map((it, i) => (i === 0 ? { ...it, reasons: ['', '', '이유', '', ''] } : it)) }
+check('PART V 검사 — 버리는 오답의 이유가 빠지면 짚는다', checkPart('V', noReason).some((x) => x.includes('26번 — 틀린 이유가 없는 오답: a')))
+const noHard = { items: goodV.items.map((it) => ({ ...it, hard: false })) }
+check('PART V 검사 — 고난도가 없으면 짚는다', checkPart('V', noHard).some((x) => x.includes('고난도 문항이 0개')))
+// 복수 정답 점검 — 정답 없이 다시 풀어 본 결과를 정답과 견준다
+const ac = (answerCheck) => answerCheckIssues({ choices: ['a', 'b', 'c', 'd', 'e'], answers: [2, 4], answerCheck }, '26번')
+check('복수 정답 점검 — 오답을 답으로 고르면 짚는다', ac({ fits: [2, 3, 4], doubtful: [] }).some((x) => x.includes('③ c 도 답으로 읽힘')))
+check('복수 정답 점검 — 애매하다고 한 오답을 짚는다', ac({ fits: [2, 4], doubtful: [{ choice: 1, why: '문맥상 가능' }] }).some((x) => x.includes('① a 가 답으로 읽힐 여지')))
+check('복수 정답 점검 — 정답을 고르지 않으면 짚는다', ac({ fits: [2], doubtful: [] }).some((x) => x.includes('정답 ④ d')))
+check('복수 정답 점검 — 정답과 같으면 통과', ac({ fits: [4, 2], doubtful: [] }).length === 0)
+check('복수 정답 점검 — 점검이 실패하면 알린다', ac({ error: 'timeout' }).some((x) => x.includes('점검 실패')))
+const { buildPartVCheckPrompt } = await import('../server/quizPrompts.js')
+const vCheckPrompt = buildPartVCheckPrompt({ items: [{ id: 'v1', sentence: 'They _______________ it.', choices: ['a', 'b', 'c', 'd', 'e'] }] })
+check('복수 정답 점검 프롬프트 — 정답을 싣지 않고 doubtful 을 받는다', vCheckPrompt.includes('id=v1') && vCheckPrompt.includes('① a') && vCheckPrompt.includes('doubtful') && !vCheckPrompt.includes('answers'))
+const { wrongReasons } = await import('../src/lib/exportDocx.js')
+check('정답해설 — 오답마다 이유 한 마디', wrongReasons({ choices: ['enemy', 'companion', 'acquaintance', 'partner', 'friend'], answers: [2, 4, 5], reasons: ['반대 방향', '', '그냥 아는 사이', '', ''] }) === '① enemy — 반대 방향 / ③ acquaintance — 그냥 아는 사이')
+
 const viPrompt = buildPartVIPrompt({ items: [qItem], opening: 1, ending: 2 })
 check('PART VI — 고른 도입 · 마무리 틀이 실린다', viPrompt.includes('대사') && viPrompt.includes('반전'))
 check('PART VI — 소개 틀 · 교훈 마무리를 금한다', viPrompt.includes('spent/had spent N years') && viPrompt.includes('교훈'))
