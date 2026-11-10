@@ -7,6 +7,8 @@ import { readFile } from 'node:fs/promises'
 import { splitPassages, splitSentences, sentenceAt } from '../src/lib/passages.js'
 import { tokenize, surfaceOf, locateSurface } from '../src/lib/tokenize.js'
 import { guessPos, guessLevel, summarize } from '../src/lib/posLite.js'
+import { parseGoogleLink, fileNameFrom, fileNameFor } from '../server/googleLink.js'
+import { allocate, verbForm } from '../src/lib/quizAllocate.js'
 
 let failures = 0
 const check = (label, cond, detail = '') => {
@@ -365,8 +367,86 @@ check('새 줄 1개', diffOf(inserted) === '{"changed":0,"added":1,"removed":0}'
 check('새 줄을 알린다', inserted.warnings.unmatched.join(',') === 'urbanization', JSON.stringify(inserted.warnings.unmatched))
 check('새 줄이 있어도 같은 작업', isSameWork(inserted.rows, samplePassages))
 
-/* 바뀐 표제어만 생성 ------------------------------------------------ */
-console.log('\n[10] 바뀐 표제어만 생성 — 계획 · 엮기 · 반의어 비율')
+/* 10. 구글 링크 해석 ------------------------------------------- */
+console.log('\n[10] 구글 링크 해석')
+const DOC_ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdEF'
+const FILE_ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456'
+const linkOf = (url) => JSON.stringify(parseGoogleLink(url))
+const docLink = JSON.stringify({ kind: 'doc', id: DOC_ID })
+const fileLink = JSON.stringify({ kind: 'file', id: FILE_ID })
+
+check('구글 문서 편집 링크', linkOf(`https://docs.google.com/document/d/${DOC_ID}/edit?usp=sharing`) === docLink)
+check('구글 문서 — 계정 번호 붙은 링크', linkOf(`https://docs.google.com/document/u/1/d/${DOC_ID}/edit`) === docLink)
+check('구글 문서 — 앞뒤 공백', linkOf(`  https://docs.google.com/document/d/${DOC_ID}  `) === docLink)
+check('드라이브 파일 보기 링크', linkOf(`https://drive.google.com/file/d/${FILE_ID}/view?usp=sharing`) === fileLink)
+check('드라이브 open?id=', linkOf(`https://drive.google.com/open?id=${FILE_ID}`) === fileLink)
+check('드라이브 uc?id=', linkOf(`https://drive.google.com/uc?id=${FILE_ID}&export=download`) === fileLink)
+check('시트는 거절', parseGoogleLink(`https://docs.google.com/spreadsheets/d/${DOC_ID}/edit`) === null)
+check('슬라이드는 거절', parseGoogleLink(`https://docs.google.com/presentation/d/${DOC_ID}/edit`) === null)
+check("'웹에 게시' 링크는 거절", parseGoogleLink('https://docs.google.com/document/d/e/2PACX-1vT/pub') === null)
+check('남의 주소는 거절', parseGoogleLink(`https://example.com/document/d/${DOC_ID}`) === null)
+check('id 에 섞인 이상한 문자는 거절', parseGoogleLink('https://drive.google.com/open?id=abc/../../etc') === null)
+check('주소가 아니면 거절', parseGoogleLink('그냥 글자') === null)
+
+check('한글 파일 이름 (filename*)',
+  fileNameFrom(`attachment; filename="____.docx"; filename*=UTF-8''${encodeURIComponent('11강 지문.docx')}`) === '11강 지문.docx')
+check('filename= 만 있을 때', fileNameFrom('attachment; filename="passages.txt"') === 'passages.txt')
+check('이름이 없으면 빈 문자열', fileNameFrom('') === '')
+check('확장자 없는 이름은 형식에서 붙인다', fileNameFor('file', 'attachment; filename="지문"', 'text/plain; charset=utf-8') === '지문.txt')
+check('이름 없는 구글 문서', fileNameFor('doc', '', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') === '구글 문서.docx')
+check('확장자 있으면 그대로', fileNameFor('file', 'attachment; filename="a.PDF"', 'application/octet-stream') === 'a.PDF')
+
+/* 11. 시험지 배정 시드 ------------------------------------------ */
+console.log('\n[11] 시험지 배정 시드')
+// 굴절 열쇠가 서로 겹치지 않도록 k 로 끝나는 만든 낱말을 쓴다 (zoraak, zorabk …)
+const stemOf = (i) => `zor${String.fromCharCode(97 + (i % 26))}${String.fromCharCode(97 + Math.floor(i / 26))}k`
+const VERB_FORMS = [(h) => h, (h) => `${h}s`, (h) => `${h}ing`, (h) => `${h}ed`, (h) => `${h}t`]
+const quizRows = Array.from({ length: 70 }, (_, i) => {
+  const kind = i % 7
+  const stem = stemOf(i)
+  const pos = ['동', '동', '형', '부', '명', '구', '명'][kind]
+  const headword = pos === '구' ? `${stem} up` : stem
+  const surface = pos === '동' ? VERB_FORMS[i % 5](stem) : headword
+  return {
+    id: `r${i}`,
+    headword,
+    surface,
+    pos,
+    meaning: `뜻${i}`,
+    sentence: `They saw ${surface} there.`,
+    passageNo: 1,
+    derivatives: i % 2 === 0 ? [{ word: `${stem}ness`, pos: '명' }] : [],
+    synonyms: i % 3 === 0 ? [{ word: 'alpha' }, { word: 'beta' }] : i % 3 === 1 ? [{ word: 'gamma' }] : [],
+    antonyms: i % 4 === 0 ? [{ word: 'delta', confidence: 4 }] : [],
+  }
+})
+const idsOf = (a) =>
+  JSON.stringify(Object.fromEntries(Object.entries(a.parts).map(([k, v]) => [k, (k === 'III' ? v.all : v).map((r) => r.id)])))
+const picked = (a) => Object.entries(a.parts).flatMap(([k, v]) => (k === 'III' ? v.all : v))
+
+const plain = allocate(quizRows)
+check('시드가 없으면 단어장 순서 그대로', idsOf(plain) === idsOf(allocate(quizRows, {})) && idsOf(plain) === idsOf(allocate(quizRows, { seed: undefined })))
+check('같은 시드는 같은 배정', idsOf(allocate(quizRows, { seed: 7 })) === idsOf(allocate(quizRows, { seed: 7 })))
+check('다른 시드는 다른 배정', idsOf(allocate(quizRows, { seed: 1 })) !== idsOf(allocate(quizRows, { seed: 2 })))
+check('시드를 줘도 단어장 통계는 같다', JSON.stringify(allocate(quizRows, { seed: 3 }).stats) === JSON.stringify(plain.stats))
+
+for (const seed of [11, 22, 33]) {
+  const a = allocate(quizRows, { seed })
+  const all = picked(a)
+  check(`시드 ${seed} — 모든 PART 를 채움`, a.ok, JSON.stringify(a.shortages))
+  check(`시드 ${seed} — 한 번 쓴 말은 다시 안 씀`, new Set(all.map((r) => r.headword)).size === all.length, `${all.length}개`)
+  check(`시드 ${seed} — PART 조건 유지`,
+    a.parts.IV.every((r) => r.pos === '동') &&
+      a.parts.II.every((r) => r.pos === '형' || r.pos === '부') &&
+      a.parts.V.every((r) => r.synonyms.length >= 2) &&
+      a.parts.VI.every((r) => r.pos !== '구'))
+  check(`시드 ${seed} — PART IV 형태가 모두 다름`,
+    new Set(a.parts.IV.map((r) => verbForm(r.surface, r.headword))).size === 5,
+    a.parts.IV.map((r) => verbForm(r.surface, r.headword)).join(','))
+}
+
+/* 12. 바뀐 표제어만 생성 ------------------------------------------------ */
+console.log('\n[12] 바뀐 표제어만 생성 — 계획 · 엮기 · 반의어 비율')
 const { planRegeneration, mergeRows } = await import('../src/lib/regenPlan.js')
 const { enforceAntonymRatio } = await import('../src/lib/aiClient.js')
 
@@ -410,17 +490,17 @@ check('id 를 가로채지 않는다 — 같은 표현 두 번', (() => {
 
 // 반의어 비율 — 남긴 줄은 세기만 하고 새 줄에서만 덜어낸다
 const ant = (id, conf) => ({ id, headword: id, antonyms: [{ word: 'x', confidence: conf }] })
-const plain = (id) => ({ id, headword: id, antonyms: [] })
+const noAnt = (id) => ({ id, headword: id, antonyms: [] })
 // 남긴 줄 8개 중 3개에 반의어 — 새 줄 1개를 더해도 4/9 로 상한(50%) 안이다
-const keepRows = [ant('k1', 1), ant('k2', 1), ant('k3', 1), plain('k4'), plain('k5'), plain('k6'), plain('k7'), plain('k8')]
+const keepRows = [ant('k1', 1), ant('k2', 1), ant('k3', 1), noAnt('k4'), noAnt('k5'), noAnt('k6'), noAnt('k7'), noAnt('k8')]
 const one = enforceAntonymRatio([ant('n1', 0.9)], keepRows)
 check('새 줄 1개라도 표 전체 비율 안이면 반의어를 남긴다', one.rows[0].antonyms.length === 1 && one.stats.total === 9, JSON.stringify(one.stats))
 // 남긴 줄 6개(반의어 3) + 새 줄 2개(둘 다 반의어) = 5/8 → 상한 4 를 1 넘는다
 const over = enforceAntonymRatio([ant('n1', 0.9), ant('n2', 0.4)], keepRows.slice(0, 6))
 check('넘치면 새 줄에서 확신 낮은 것부터', over.rows.find((r) => r.id === 'n2').antonyms.length === 0 && over.rows.find((r) => r.id === 'n1').antonyms.length === 1, JSON.stringify(over.stats))
-const stuck = enforceAntonymRatio([ant('n1', 0.9)], [ant('k1', 1), ant('k2', 1), plain('k3')])
+const stuck = enforceAntonymRatio([ant('n1', 0.9)], [ant('k1', 1), ant('k2', 1), noAnt('k3')])
 check('남긴 줄은 넘쳐도 건드리지 않는다', stuck.rows[0].antonyms.length === 0 && stuck.stats.removed === 1, JSON.stringify(stuck.stats))
-const solo = enforceAntonymRatio([ant('n1', 0.9), plain('n2')])
+const solo = enforceAntonymRatio([ant('n1', 0.9), noAnt('n2')])
 check('keep 없이 부르면 예전과 같다', solo.stats.total === 2 && solo.rows[0].antonyms.length === 1, JSON.stringify(solo.stats))
 
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)

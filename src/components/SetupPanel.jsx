@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { extractText, fileKind } from '../lib/textExtract.js'
+import { extractText, fileKind, fetchGoogleFile } from '../lib/textExtract.js'
 import { splitMultiple, mergePassages, removePassage } from '../lib/passages.js'
-import { MODELS } from '../lib/models.js'
+import { MODELS, EFFORTS } from '../lib/models.js'
 import { downloadText } from '../lib/exportXlsx.js'
 import { readWordbook } from '../lib/importXlsx.js'
 import { checkHealth } from '../lib/aiClient.js'
@@ -55,6 +55,7 @@ export default function SetupPanel() {
     targetCount,
     mode,
     model,
+    effort,
     docTitle,
     sourceFiles,
     rows,
@@ -66,6 +67,7 @@ export default function SetupPanel() {
     setDocTitle,
     setMode,
     setModel,
+    setEffort,
     setStep,
   } = useStore()
 
@@ -76,6 +78,7 @@ export default function SetupPanel() {
   // [{ name, kind, text, pageCount, needsReview }]
   const [drafts, setDrafts] = useState(null)
   const [textDraft, setTextDraft] = useState(null) // 붙여넣기 입력창 내용. null이면 닫힌 상태
+  const [linkDraft, setLinkDraft] = useState(null) // 구글 링크 입력창 내용. null이면 닫힌 상태
   // 불러온 단어장. PDF 변환과 같은 이유로 여기서 한 번 멈춘다 — 무엇이 들어왔는지 보고 넘긴다.
   // { name, rows, passages, docTitle, warnings }
   const [imported, setImported] = useState(null)
@@ -154,6 +157,23 @@ export default function SetupPanel() {
     [ingest, sourceFiles]
   )
 
+  /** 구글 링크의 파일을 받아, 직접 올린 파일과 같은 길로 넘긴다. 실패하면 입력창을 열어 둔다. */
+  const handleLink = async () => {
+    setError('')
+    let file
+    try {
+      setBusy({ label: '구글 링크에서 파일을 받는 중…' })
+      file = await fetchGoogleFile(linkDraft.trim())
+    } catch (err) {
+      setError(err.message)
+      return
+    } finally {
+      setBusy(null)
+    }
+    setLinkDraft(null)
+    handleFiles([file])
+  }
+
   /** 이미 만든 단어장 XLSX 를 읽는다. 바로 넘기지 않고 무엇이 들어왔는지 먼저 보여준다. */
   const handleWordbook = async (file) => {
     if (!file) return
@@ -173,7 +193,7 @@ export default function SetupPanel() {
   const applyWordbook = () => {
     // 지문 입력·표제어 선택을 거치지 않는 경로라 지금까지의 작업이 전부 밀린다
     const working = rows.length || selections.length || sourceFiles.length
-    if (working && !confirm('지금까지의 지문·표제어·단어장을 지우고 불러온 단어장으로 바꿀까요?')) return
+    if (working && !confirm('지금까지의 지문·표제어·단어장·시험지를 지우고 불러온 단어장으로 바꿀까요?')) return
     loadWordbook({ rows: imported.rows, passages: imported.passages, docTitle: imported.docTitle })
   }
 
@@ -259,15 +279,26 @@ export default function SetupPanel() {
                 </div>
               </div>
               {/* 드롭존 전체가 파일 선택 버튼이므로 클릭이 위로 번지지 않게 막는다 */}
-              <button
-                className="btn sm dz-paste"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setTextDraft('')
-                }}
-              >
-                텍스트 붙여넣기
-              </button>
+              <div className="dz-actions">
+                <button
+                  className="btn sm dz-paste"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setTextDraft('')
+                  }}
+                >
+                  텍스트 붙여넣기
+                </button>
+                <button
+                  className="btn sm dz-paste"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setLinkDraft('')
+                  }}
+                >
+                  구글 링크로 불러오기
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -412,6 +443,36 @@ export default function SetupPanel() {
           </div>
         )}
 
+        {/* 2-c. 구글 링크 */}
+        {linkDraft !== null && (
+          <div className="panel link-panel">
+            <div className="panel-title">구글 링크로 불러오기</div>
+            <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <p className="hint" style={{ margin: 0 }}>
+                구글 문서, 또는 구글 드라이브에 올린 .docx · .pdf · .txt 파일의 링크를 붙여넣으세요. 공유 설정이{' '}
+                <strong>링크가 있는 모든 사용자</strong>여야 읽을 수 있습니다.
+              </p>
+              <input
+                type="url"
+                autoFocus
+                value={linkDraft}
+                onChange={(e) => setLinkDraft(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && linkDraft.trim() && !busy && handleLink()}
+                placeholder="https://docs.google.com/document/d/…"
+                spellCheck={false}
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn primary" disabled={!linkDraft.trim() || Boolean(busy)} onClick={handleLink}>
+                  이 링크로 지문 만들기
+                </button>
+                <button className="btn ghost" onClick={() => setLinkDraft(null)}>
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 3. 지문 미리보기 */}
         {passages.length > 0 && (
           <div className="panel">
@@ -531,6 +592,17 @@ export default function SetupPanel() {
                     {MODELS.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="effort">생각 깊이 (effort)</label>
+                  <select id="effort" value={effort} onChange={(e) => setEffort(e.target.value)}>
+                    {EFFORTS.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.label}
                       </option>
                     ))}
                   </select>

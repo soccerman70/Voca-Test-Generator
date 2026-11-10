@@ -17,6 +17,7 @@ export default function Workspace() {
     targetCount,
     focusedId,
     model,
+    effort,
     mode,
     sourceFiles,
     rows,
@@ -98,6 +99,7 @@ export default function Workspace() {
           quotas: qs,
           exclude,
           model,
+          effort,
           onProgress: ({ group, groupCount }) =>
             setAiMessage(`AI가 지문을 분석하는 중… (묶음 ${group}/${groupCount})`),
         })
@@ -132,7 +134,7 @@ export default function Workspace() {
           '지문에서 더 고를 만한 표현이 없다는 뜻입니다. 목표 개수를 줄이거나 지문을 더 넣어주세요.'
       )
     }
-  }, [model, passages, replaceSelections, selections, targetCount])
+  }, [effort, model, passages, replaceSelections, selections, targetCount])
 
   /* ---------------- 생성 ---------------- */
 
@@ -162,6 +164,7 @@ export default function Workspace() {
       const { rows: fresh, antonymStats, usage } = await enrichAll({
         items,
         model,
+        effort,
         keep,
         onProgress: setGenProgress,
       })
@@ -180,7 +183,7 @@ export default function Workspace() {
     } finally {
       setGenBusy(false)
     }
-  }, [genScope, lastUsage, model, passages, regenPlan, selections, setRows, setStep])
+  }, [effort, genScope, lastUsage, model, passages, regenPlan, selections, setRows, setStep])
 
   /* ---------------- 렌더 ---------------- */
 

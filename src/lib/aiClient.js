@@ -103,6 +103,7 @@ export async function autoSelect({
   passages,
   quotas,
   model,
+  effort,
   exclude = [],
   oversample = SELECT_OVERSAMPLE,
   groupSize = SELECT_GROUP_SIZE,
@@ -140,6 +141,7 @@ export async function autoSelect({
         passages: groups[index],
         exclude,
         model,
+        effort,
       })
 
       if (u) {
@@ -172,6 +174,7 @@ export async function autoSelect({
 export async function enrichAll({
   items,
   model,
+  effort,
   keep = [],
   batchSize = 25,
   concurrency = CONCURRENCY,
@@ -220,6 +223,7 @@ export async function enrichAll({
         items: payload,
         antonymTargetRatio: ANTONYM_TARGET_RATIO,
         model,
+        effort,
       })
 
       if (u) {

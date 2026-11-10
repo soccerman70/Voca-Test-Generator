@@ -9,7 +9,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { DEFAULT_MODEL, isKnownModel } from '../src/lib/models.js'
+import { DEFAULT_MODEL, DEFAULT_EFFORT, isKnownModel, isKnownEffort } from '../src/lib/models.js'
 import { buildSelectPrompt, buildEnrichPrompt } from './prompts.js'
 import {
   buildPartIIPrompt,
@@ -37,8 +37,12 @@ function hintFor(message) {
   return ''
 }
 
+function safeEffort(effort) {
+  return isKnownEffort(effort) ? effort : DEFAULT_EFFORT
+}
+
 /** 한 번의 헤드리스 호출. 프롬프트는 stdin으로 넘겨 인자 따옴표 문제를 피한다. */
-function runClaude(prompt, { model = DEFAULT_MODEL, timeoutMs = 600_000 } = {}) {
+function runClaude(prompt, { model = DEFAULT_MODEL, effort = DEFAULT_EFFORT, timeoutMs = 600_000 } = {}) {
   return new Promise((resolve, reject) => {
     const args = [
       '-p',
@@ -46,6 +50,8 @@ function runClaude(prompt, { model = DEFAULT_MODEL, timeoutMs = 600_000 } = {}) 
       'json',
       '--model',
       safeModel(model),
+      '--effort',
+      safeEffort(effort),
       '--strict-mcp-config',
       '--exclude-dynamic-system-prompt-sections',
     ]
@@ -195,7 +201,7 @@ const routes = {
 
   /** AI 자동 표제어 추출 */
   async select(body) {
-    const { passages, model, exclude } = body
+    const { passages, model, effort, exclude } = body
     if (!Array.isArray(passages) || !passages.length) throw new Error('지문이 없습니다.')
     // 지문별 목표 개수(quota)는 클라이언트가 분량 비례로 계산해 실어 보낸다.
     const quoted = passages
@@ -207,7 +213,7 @@ const routes = {
       passages: quoted,
       exclude: Array.isArray(exclude) ? exclude.slice(0, 400) : [],
     })
-    const { text, usage, durationMs } = await runClaude(prompt, { model })
+    const { text, usage, durationMs } = await runClaude(prompt, { model, effort })
     const parsed = parseJsonLoose(text)
 
     return {
@@ -222,7 +228,7 @@ const routes = {
    * PART 마다 따로 부르는 것은 넷을 동시에 돌리기 위해서다.
    */
   async quiz(body) {
-    const { part, payload, model } = body
+    const { part, payload, model, effort } = body
     const build = {
       II: buildPartIIPrompt,
       III: buildPartIIIPrompt,
@@ -233,17 +239,17 @@ const routes = {
     if (!build) throw new Error(`알 수 없는 PART: ${part}`)
     if (!payload) throw new Error('PART 재료가 없습니다.')
 
-    const { text, usage, durationMs } = await runClaude(build(payload), { model })
+    const { text, usage, durationMs } = await runClaude(build(payload), { model, effort })
     return { part, result: parseJsonLoose(text), usage, durationMs }
   },
 
   /** 표제어 정규화 + 파생어/유의어/반의어 생성 (한 배치) */
   async enrich(body) {
-    const { items, antonymTargetRatio, model } = body
+    const { items, antonymTargetRatio, model, effort } = body
     if (!Array.isArray(items) || !items.length) throw new Error('항목이 없습니다.')
 
     const prompt = buildEnrichPrompt({ items, antonymTargetRatio })
-    const { text, usage, durationMs } = await runClaude(prompt, { model })
+    const { text, usage, durationMs } = await runClaude(prompt, { model, effort })
     const parsed = parseJsonLoose(text)
 
     return {
@@ -274,7 +280,8 @@ export function claudeBridge() {
             const wall = ((Date.now() - startedAt) / 1000).toFixed(1)
             const out = u.output_tokens || 0
             server.config.logger.info(
-              `[claude-bridge] ${route} ${wall}s · 입력 ${u.input_tokens || 0} · 출력 ${out}` +
+              `[claude-bridge] ${route} ${safeModel(body.model)}/${safeEffort(body.effort)}` +
+                ` ${wall}s · 입력 ${u.input_tokens || 0} · 출력 ${out}` +
                 ` · 캐시읽기 ${u.cache_read_input_tokens || 0} · 캐시생성 ${u.cache_creation_input_tokens || 0}` +
                 ` · ${(out / Math.max(Number(wall), 0.1)).toFixed(0)} tok/s`
             )

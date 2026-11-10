@@ -228,7 +228,7 @@ function crossCheck(byPart) {
  * 네 PART 를 동시에 만든다.
  * 하나가 실패해도 나머지는 살린다 — 다시 만들 때 성공한 것까지 버릴 이유가 없다.
  */
-export async function generateQuizParts({ parts, model, startNo = 31, onProgress, signal }) {
+export async function generateQuizParts({ parts, model, effort, startNo = 31, onProgress, signal }) {
   const payloads = buildPayloads(parts, startNo)
   const byPart = {}
   let done = 0
@@ -240,7 +240,7 @@ export async function generateQuizParts({ parts, model, startNo = 31, onProgress
     QUIZ_PARTS.map(async (part) => {
       if (signal?.aborted) return
       try {
-        const { result, usage, durationMs } = await post({ part, payload: payloads[part], model })
+        const { result, usage, durationMs } = await post({ part, payload: payloads[part], model, effort })
         byPart[part] = {
           result,
           usage,

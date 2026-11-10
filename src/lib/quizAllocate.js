@@ -86,13 +86,39 @@ function takeDiverseVerbs(candidates, need, ledger) {
 const isPhraseRow = (row) => row.pos === '구' || isPhrase(row.surface || row.headword)
 const countOf = (list) => (Array.isArray(list) ? list.length : 0)
 
+/** 시드를 받는 난수 (mulberry32). 같은 시드면 같은 수열이 나와 배정을 다시 만들 수 있다. */
+function seededRandom(seed) {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function shuffled(list, seed) {
+  const random = seededRandom(seed)
+  const out = [...list]
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(random() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
+
 /**
  * @param {Array} rows 확정된 단어장
+ * @param {{seed?: number}} [options] 시드가 있으면 후보 순서를 섞어 다른 배정을 낸다.
+ *   규칙(까다로운 PART 먼저, 굴절형 중복 금지)은 그대로이고 앞에서부터 훑는 순서만 바뀐다.
+ *   없으면 단어장 순서 그대로다.
  * @returns {{parts, stats, shortages, ok}}
  */
-export function allocate(rows) {
+export function allocate(rows, { seed } = {}) {
   // 고유명사는 출제 대상이 아니다
   const usable = (rows || []).filter((r) => r.headword && !r.properNoun)
+  const pool = seed == null ? usable : shuffled(usable, seed)
 
   const ledger = new Set()
 
@@ -103,7 +129,7 @@ export function allocate(rows) {
    */
   const take = (fits, need) => {
     const picked = []
-    for (const row of usable) {
+    for (const row of pool) {
       if (picked.length >= need) break
       if (!fits(row)) continue
       const key = inflectionKey(row.headword)
@@ -117,7 +143,7 @@ export function allocate(rows) {
   const parts = {}
 
   // IV — 동사. 어구는 형태 변형 문항에 맞지 않아 제외한다
-  parts.IV = takeDiverseVerbs(usable.filter((r) => r.pos === '동' && !isPhraseRow(r)), 5, ledger)
+  parts.IV = takeDiverseVerbs(pool.filter((r) => r.pos === '동' && !isPhraseRow(r)), 5, ledger)
 
   // III — 파생 2 · 유의 1 · 반의 2. 세 갈래를 각각 채운다
   const derivative = take((r) => countOf(r.derivatives) >= 1, 2)

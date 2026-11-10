@@ -3,6 +3,7 @@
  *  - .docx : mammoth 브라우저 빌드로 서식 없는 텍스트 추출
  *  - .pdf  : pdf.js 로 페이지별 텍스트 추출 (특별 변환 기능)
  *  - .txt  : 그대로 읽음
+ *  - 구글 링크 : dev 서버가 받아온 파일을 File 로 감싸 위와 똑같이 읽음
  */
 
 import mammoth from 'mammoth/mammoth.browser.js'
@@ -92,6 +93,21 @@ export async function extractText(file, onProgress) {
     default:
       throw new Error('지원하지 않는 형식입니다. .docx, .pdf, .txt 만 올릴 수 있습니다.')
   }
+}
+
+/**
+ * 구글 문서 · 드라이브 공개 링크 → File.
+ * 브라우저는 구글에서 직접 받지 못해(CORS) dev 서버(/api/google)가 대신 받는다.
+ * 돌려받은 File 은 직접 올린 파일과 똑같이 extractText 로 읽는다.
+ */
+export async function fetchGoogleFile(link) {
+  const res = await fetch(`/api/google?url=${encodeURIComponent(link)}`)
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || `구글 링크를 읽지 못했습니다 (${res.status})`)
+  }
+  const name = decodeURIComponent(res.headers.get('X-File-Name') || '구글 파일')
+  return new File([await res.blob()], name, { type: res.headers.get('Content-Type') || '' })
 }
 
 /* ------------------------------------------------------------------ */

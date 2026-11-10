@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { sentenceAt } from './lib/passages.js'
 import { guessPos, guessLevel } from './lib/posLite.js'
-import { DEFAULT_MODEL, upgradeModel } from './lib/models.js'
+import { DEFAULT_MODEL, DEFAULT_EFFORT, upgradeModel } from './lib/models.js'
 
 let seq = 0
 const nextId = () => `s${Date.now().toString(36)}${(seq += 1).toString(36)}`
@@ -29,6 +29,7 @@ const initial = {
   targetCount: 100,
   mode: 'manual', // manual | ai
   model: DEFAULT_MODEL,
+  effort: DEFAULT_EFFORT, // claude -p --effort. 답하기 전에 얼마나 생각할지
   docTitle: '', // 엑셀 첫 줄과 파일 이름에 쓰는 단어장 제목
 
   focusedId: null,
@@ -39,7 +40,17 @@ const initial = {
   lastUsage: null,
   // 단어장을 확정한 시각. 시험지 화면으로 넘어가는 순간 찍히고, 표를 한 칸이라도 고치면 지워진다.
   confirmedAt: null,
+
+  // 만든 단어시험지 목록. [{ id, no, seed, createdAt, parts, shortages, ok, thirdDetail, context, gen }]
+  // 시험지 화면은 탭을 옮기면 내려가므로 여기 두어야 AI 문항과 앞뒤 문장 조절이 살아남는다.
+  quizzes: [],
+  activeQuizId: null,
+  // 생성 중인 시험지별 진행률. 보존하지 않는다 — 새로고침하면 요청 자체가 끊긴다.
+  quizBusy: {},
 }
+
+/** 단어장이 바뀌면 만든 시험지는 더 이상 맞지 않는다. 단어장을 바꾸는 동작마다 함께 비운다. */
+const NO_QUIZZES = { quizzes: [], activeQuizId: null }
 
 export const useStore = create(
   persist(
@@ -71,6 +82,7 @@ export const useStore = create(
             // 지문 구성이 달라졌으면 이미 만든 표는 더 이상 맞지 않는다. 다시 생성해야 한다.
             rows: [],
             antonymStats: null,
+            ...NO_QUIZZES,
             focusedId: passages.some((p) => p.id === s.focusedId) ? s.focusedId : passages[0]?.id ?? null,
             // 지문을 만들었다고 바로 넘기지 않는다. 같은 화면에서 미리보기로 분할을 확인하고
             // 개수·선택 방식·모델을 정한 뒤 "표제어 선택 시작" 버튼으로 넘어가는 것이 원래 흐름이다.
@@ -97,6 +109,7 @@ export const useStore = create(
           lastUsage: null,
           confirmedAt: Date.now(),
           step: 'quiz',
+          ...NO_QUIZZES,
         }),
 
       /**
@@ -115,6 +128,7 @@ export const useStore = create(
           lastUsage: null,
           confirmedAt: null,
           step: 'result',
+          ...NO_QUIZZES,
           ...(sameWork
             ? { docTitle: docTitle || s.docTitle }
             : {
@@ -146,6 +160,7 @@ export const useStore = create(
       setDocTitle: (docTitle) => set({ docTitle: String(docTitle).slice(0, DOC_TITLE_MAX) }),
       setMode: (mode) => set({ mode }),
       setModel: (model) => set({ model }),
+      setEffort: (effort) => set({ effort }),
       /**
        * 시험지 화면으로 넘어가는 것이 곧 단어장 확정이다.
        * 별도 확정 버튼을 두지 않는 대신, 표를 고치면 확정이 풀려(updateRow·removeRow)
@@ -203,16 +218,50 @@ export const useStore = create(
       /* ---------------- 결과 ---------------- */
 
       setRows: (rows, antonymStats, lastUsage) =>
-        set({ rows, antonymStats, lastUsage, step: 'result', confirmedAt: null }),
+        set({ rows, antonymStats, lastUsage, step: 'result', confirmedAt: null, ...NO_QUIZZES }),
 
       updateRow: (id, patch) =>
         set((s) => ({
           rows: s.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
           confirmedAt: null,
+          ...NO_QUIZZES,
         })),
 
       removeRow: (id) =>
-        set((s) => ({ rows: s.rows.filter((r) => r.id !== id), confirmedAt: null })),
+        set((s) => ({ rows: s.rows.filter((r) => r.id !== id), confirmedAt: null, ...NO_QUIZZES })),
+
+      /* ---------------- 시험지 ---------------- */
+
+      /** 새 시험지를 목록 끝에 더하고 그것을 연다. */
+      addQuiz: (quiz) => set((s) => ({ quizzes: [...s.quizzes, quiz], activeQuizId: quiz.id })),
+
+      /**
+       * patch 는 객체이거나, 지금 시험지를 받아 바꿀 값을 돌려주는 함수다.
+       * 생성 도중 단어장이 바뀌어 시험지가 지워졌다면 없는 id 라 아무 일도 없다.
+       */
+      updateQuiz: (id, patch) =>
+        set((s) => ({
+          quizzes: s.quizzes.map((q) =>
+            q.id === id ? { ...q, ...(typeof patch === 'function' ? patch(q) : patch) } : q
+          ),
+        })),
+
+      removeQuiz: (id) =>
+        set((s) => {
+          const quizzes = s.quizzes.filter((q) => q.id !== id)
+          const activeQuizId = s.activeQuizId === id ? quizzes[quizzes.length - 1]?.id ?? null : s.activeQuizId
+          return { quizzes, activeQuizId }
+        }),
+
+      setActiveQuiz: (id) => set({ activeQuizId: id }),
+
+      setQuizBusy: (id, progress) =>
+        set((s) => {
+          const quizBusy = { ...s.quizBusy }
+          if (progress) quizBusy[id] = progress
+          else delete quizBusy[id]
+          return { quizBusy }
+        }),
     }),
     {
       name: 'jls-vocab-store',
@@ -222,12 +271,12 @@ export const useStore = create(
       // 예전에 저장된 지문에는 label 이 없어 화면에 빈 번호가 찍히므로 입력 단계부터 다시 받는다.
       // v4 — 파일을 뒤에 더 올릴 수 있게 되면서 파일마다 원문(text)과 열쇠(key)를 들고 있어야 한다.
       // 그 전에 저장된 파일 목록에는 둘 다 없어 "파일 빼기"가 빈 지문을 만든다.
-      // v5 — 모델을 Opus 5.5 / Sonnet 5.5 로 바꿨다. 옛 값이 남아 있으면 선택 목록에 없는 값이
-      // 화면에 찍히고 서버는 말없이 기본 모델로 돌리므로, 같은 계열의 새 모델로 옮긴다.
+      // v5 — 모델이 5.5 세대로 바뀌고 effort 가 생겼다. 저장된 옛 이름(claude-sonnet-5 등)은 선택 목록에 없어
+      // 그대로 두면 화면에 엉뚱한 값이 찍히고 서버는 말없이 기본 모델로 돌린다. upgradeModel 로 옮기고
+      // (Opus 계열은 Opus 5.5, 나머지는 기본 Opus 5.5) effort 는 기본값(medium)으로 둔다.
       version: 5,
       migrate: (state, from) => {
         let next = from < 2 ? { ...state, model: initial.model } : state
-        if (from < 5) next = { ...next, model: upgradeModel(next.model) }
         if (from < 4) {
           // fileInfo/splitMethod/splitStyle 은 partialize 에서 빠졌으므로 다음 저장 때 사라진다
           next = {
@@ -239,6 +288,7 @@ export const useStore = create(
             step: initial.step,
           }
         }
+        if (from < 5) next = { ...next, model: upgradeModel(next.model), effort: initial.effort }
         return next
       },
       partialize: (s) => ({
@@ -248,12 +298,15 @@ export const useStore = create(
         targetCount: s.targetCount,
         mode: s.mode,
         model: s.model,
+        effort: s.effort,
         docTitle: s.docTitle,
         focusedId: s.focusedId,
         selections: s.selections,
         rows: s.rows,
         antonymStats: s.antonymStats,
         confirmedAt: s.confirmedAt,
+        quizzes: s.quizzes,
+        activeQuizId: s.activeQuizId,
       }),
     }
   )
