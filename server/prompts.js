@@ -182,6 +182,11 @@ export function buildEnrichPrompt({ items, antonymTargetRatio = 0.4 }) {
 - 단, 특히 자주 쓰이면서 형태가 독특하거나 예외적인 파생어는 우선순위를 무시하고 먼저 넣는다.
 - 표제어와 형태가 거의 같은 뻔한 파생어(-ly만 붙인 것 등)는 다른 좋은 후보가 있으면 피한다.
 - 각 파생어에 품사를 함께 표기한다.
+- 각 파생어에 한국어 뜻(meaning)을 **가장 짧게** 단다.
+  - 뜻은 하나만, 되도록 한 낱말로 적는다. 쉼표로 여러 뜻을 늘어놓거나 괄호·설명을 붙이지 마라.
+  - 품사별 꼴은 6)의 규칙을 따르되, 같은 뜻이면 더 짧은 말을 고른다.
+    (significance → "중요성", signify → "의미하다", significantly → "상당히")
+  - 뜻갈래는 표제어가 출처 문장에서 쓰인 뜻과 이어지는 것으로 고른다.
 
 ## 3) 유의어(synonyms)
 - 적절한 유의어가 존재한다면 **항상 2개**를 생성한다.
@@ -254,7 +259,7 @@ ${body}
       "properNoun": false,
       "pos": "동",
       "meaning": "발전하다",
-      "derivatives": [ { "word": "development", "pos": "명" } ],
+      "derivatives": [ { "word": "development", "pos": "명", "meaning": "발전" } ],
       "synonyms": [ { "word": "evolve" }, { "word": "advance" } ],
       "antonyms": [ { "word": "decline", "confidence": 4 } ]
     }

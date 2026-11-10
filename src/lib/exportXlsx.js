@@ -9,7 +9,7 @@ export const COLUMNS = [
   { key: 'headword', header: '표제어', width: 22 },
   { key: 'pos', header: '품사', width: 5 },
   { key: 'meaning', header: '뜻', width: 17 },
-  { key: 'derivatives', header: '파생어', width: 25 },
+  { key: 'derivatives', header: '파생어', width: 30 },
   { key: 'synonyms', header: '유의어', width: 22 },
   { key: 'antonyms', header: '반의어', width: 22 },
   { key: 'source', header: '출처', width: 8 },
@@ -42,9 +42,38 @@ export const META_COLUMNS = [
 /** PART IV 가 앞뒤 문장을 붙일 때 쓰는 지문 원문. english 와 no 만 있으면 되지만 화면 표기용으로 label 도 담는다. */
 export const PASSAGE_COLUMNS = ['id', 'no', 'label', 'english', 'korean']
 
-/** 파생어는 한 줄에 하나씩. 엑셀 셀은 wrapText 가 켜져 있어 줄바꿈이 그대로 보인다. */
+/**
+ * 파생어는 한 줄에 하나씩 `development (명) 발전`. 엑셀 셀은 wrapText 가 켜져 있어
+ * 줄바꿈이 그대로 보인다. 화면 표와 엑셀이 같은 꼴을 쓰고, 읽을 때는 parseDerivatives 하나로 되돌린다.
+ */
 export function formatDerivatives(list) {
-  return (list || []).map((d) => (d.pos ? `${d.word} (${d.pos})` : d.word)).join('\n')
+  return (list || [])
+    .map((d) => [d.word, d.pos ? `(${d.pos})` : '', d.meaning || ''].filter(Boolean).join(' '))
+    .join('\n')
+}
+
+/**
+ * formatDerivatives 의 반대. 뜻이 없는 옛 꼴 `development (명)`과 품사 없는
+ * `development 발전`도 받는다. 줄바꿈이 기본 구분자이고, 쉼표는 뒤에 영어 낱말이
+ * 올 때만 구분자로 본다 — 사람이 "발전, 개발"처럼 뜻에 쉼표를 넣어도 갈라지지 않는다.
+ * @returns {Array<{word: string, pos: string, meaning?: string}>}
+ */
+export function parseDerivatives(text) {
+  return String(text || '')
+    .split(/\n|,(?=\s*[A-Za-z])/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const withPos = line.match(/^(.*?)\s*\(([^)]*)\)\s*(.*)$/)
+      const noPos = withPos ? null : line.match(/^([^가-힣]*[^\s가-힣])\s*([가-힣].*)$/)
+      const [word, pos, meaning] = withPos
+        ? [withPos[1], withPos[2], withPos[3]]
+        : noPos
+          ? [noPos[1], '', noPos[2]]
+          : [line, '', '']
+      const entry = { word: word.trim(), pos: pos.trim() }
+      return meaning.trim() ? { ...entry, meaning: meaning.trim() } : entry
+    })
 }
 
 export function formatWords(list) {

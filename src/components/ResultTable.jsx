@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store.js'
-import { downloadXlsx, formatDerivatives, formatWords } from '../lib/exportXlsx.js'
+import { downloadXlsx, formatDerivatives, formatWords, parseDerivatives } from '../lib/exportXlsx.js'
 import { readWordbook, isSameWork, compareRows } from '../lib/importXlsx.js'
 import { filesLabel } from '../lib/passages.js'
 import ImportNotes from './ImportNotes.jsx'
@@ -181,7 +181,7 @@ export default function ResultTable() {
               <th style={{ width: 156 }}>표제어</th>
               <th style={{ width: 46 }}>품사</th>
               <th style={{ width: 142 }}>뜻</th>
-              <th style={{ width: 170 }}>파생어</th>
+              <th style={{ width: 200 }}>파생어</th>
               <th style={{ width: 158 }}>유의어</th>
               <th style={{ width: 146 }}>반의어</th>
               <th style={{ width: 62 }}>출처</th>
@@ -259,24 +259,38 @@ export default function ResultTable() {
   )
 }
 
-/** 내용에 맞춰 높이가 늘어나는 셀. 표 안에서 글자가 잘리지 않게 한다. */
+/**
+ * 내용에 맞춰 높이가 늘어나는 셀. 표 안에서 글자가 잘리지 않게 한다.
+ *
+ * 파생어·유의어·반의어 칸은 글자를 칠 때마다 목록으로 읽었다가 다시 글로 써서 보여준다.
+ * 그 사이에 끝의 공백·줄바꿈·쉼표가 정리되어 사라지므로, 그대로 보여주면 "무시할 만큼"의
+ * 띄어쓰기나 다음 줄·다음 낱말을 칠 수가 없다. 그래서 편집하는 동안에는 친 글자를 그대로
+ * 보여주고(draft), 저장은 지금처럼 매번 하며, 칸을 떠날 때 정리된 모양으로 되돌린다.
+ */
 function AutoCell({ value, onChange, placeholder, className = '' }) {
   const ref = useRef(null)
+  const [draft, setDraft] = useState(null) // 편집 중일 때만 친 글자를 들고 있다
+  const shown = draft ?? value
 
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
-  }, [value])
+  }, [shown])
 
   return (
     <textarea
       ref={ref}
       className={`cell-edit auto ${className}`.trim()}
       rows={1}
-      value={value}
-      onChange={onChange}
+      value={shown}
+      onFocus={() => setDraft(value)}
+      onChange={(e) => {
+        setDraft(e.target.value)
+        onChange(e)
+      }}
+      onBlur={() => setDraft(null)}
       placeholder={placeholder}
     />
   )
@@ -302,18 +316,6 @@ function parseWords(text) {
     .map((s) => s.trim())
     .filter(Boolean)
     .map((word) => ({ word }))
-}
-
-function parseDerivatives(text) {
-  // 줄바꿈이 기본 구분자. 쉼표로 붙여 써도 받아준다.
-  return text
-    .split(/[\n,]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((chunk) => {
-      const m = chunk.match(/^(.*?)\s*\(([^)]*)\)$/)
-      return m ? { word: m[1].trim(), pos: m[2].trim() } : { word: chunk, pos: '' }
-    })
 }
 
 function highlight(sentence, surface) {

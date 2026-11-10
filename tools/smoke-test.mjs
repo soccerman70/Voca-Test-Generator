@@ -154,7 +154,8 @@ const sampleRows = [
   {
     id: 'r1', passageNo: 1, surface: 'immersed', sentence: sents[1],
     headword: 'immerse', normalizationNote: '수동태 과거분사', pos: '동', meaning: '몰두하다',
-    derivatives: [{ word: 'immersion', pos: '명' }, { word: 'immersive', pos: '형' }],
+    // 두 번째 파생어는 뜻이 없는 옛 꼴 — 뜻을 달기 전에 만든 단어장도 그대로 오가야 한다
+    derivatives: [{ word: 'immersion', pos: '명', meaning: '몰입' }, { word: 'immersive', pos: '형' }],
     synonyms: [{ word: 'absorb' }, { word: 'engross' }],
     antonyms: [],
   },
@@ -184,10 +185,32 @@ check('뜻 셀', ws.getRow(3).getCell(col('meaning')).value === '몰두하다', 
 check('어구 품사', ws.getRow(4).getCell(col('pos')).value === '구', String(ws.getRow(4).getCell(col('pos')).value))
 check(
   '파생어 셀 줄바꿈',
-  ws.getRow(3).getCell(col('derivatives')).value === 'immersion (명)\nimmersive (형)',
+  ws.getRow(3).getCell(col('derivatives')).value === 'immersion (명) 몰입\nimmersive (형)',
   JSON.stringify(ws.getRow(3).getCell(col('derivatives')).value)
 )
 check('파생어 셀 wrapText', ws.getRow(3).getCell(col('derivatives')).alignment?.wrapText === true)
+
+const { parseDerivatives } = await import('../src/lib/exportXlsx.js')
+const DERIV_CASES = [
+  ['development (명) 발전', [{ word: 'development', pos: '명', meaning: '발전' }]],
+  ['development (명)', [{ word: 'development', pos: '명' }]],
+  ['development 발전', [{ word: 'development', pos: '', meaning: '발전' }]],
+  ['make up (동) 구성하다', [{ word: 'make up', pos: '동', meaning: '구성하다' }]],
+  ['erosion (명) 침식, erosive (형) 침식성의',
+    [{ word: 'erosion', pos: '명', meaning: '침식' }, { word: 'erosive', pos: '형', meaning: '침식성의' }]],
+  // 뜻 안의 쉼표는 구분자가 아니다
+  ['development (명) 발전, 개발', [{ word: 'development', pos: '명', meaning: '발전, 개발' }]],
+]
+for (const [text, want] of DERIV_CASES) {
+  const got = parseDerivatives(text)
+  check(`파생어 읽기 "${text}"`, JSON.stringify(got) === JSON.stringify(want), JSON.stringify(got))
+}
+
+const { withShortMeaning } = await import('../src/lib/aiClient.js')
+const shortOf = (meaning) => withShortMeaning({ word: 'w', pos: '명', meaning }).meaning
+check('파생어 뜻은 첫 뜻만', shortOf('발전, 개발') === '발전', shortOf('발전, 개발'))
+check('파생어 뜻의 괄호 설명 제거', shortOf('발전(發展)') === '발전', shortOf('발전(發展)'))
+check('빈 뜻은 키를 두지 않음', !('meaning' in withShortMeaning({ word: 'w', pos: '명', meaning: ' ' })))
 // 번호만 적는다. 칸 이름이 이미 "출처"라 "지문"을 덧붙일 이유가 없다.
 check('출처 셀', ws.getRow(4).getCell(col('source')).value === '1', String(ws.getRow(4).getCell(col('source')).value))
 check('반의어 셀', ws.getRow(4).getCell(col('antonyms')).value === 'keep track of time', String(ws.getRow(4).getCell(col('antonyms')).value))
@@ -216,7 +239,7 @@ check('행 개수 유지', back.rows.length === 2, `${back.rows.length}개`)
 check('surface 복원', back.rows[0].surface === 'immersed', back.rows[0].surface)
 check('passageNo 는 숫자', back.rows[0].passageNo === 1, JSON.stringify(back.rows[0].passageNo))
 check('파생어 되읽기', JSON.stringify(back.rows[0].derivatives) ===
-  JSON.stringify([{ word: 'immersion', pos: '명' }, { word: 'immersive', pos: '형' }]),
+  JSON.stringify([{ word: 'immersion', pos: '명', meaning: '몰입' }, { word: 'immersive', pos: '형' }]),
   JSON.stringify(back.rows[0].derivatives))
 check('유의어 되읽기', back.rows[0].synonyms.map((x) => x.word).join(',') === 'absorb,engross')
 check('빈 반의어는 빈 배열', back.rows[0].antonyms.length === 0)

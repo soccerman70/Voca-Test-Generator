@@ -174,7 +174,9 @@ console.log(`소문자 표기 위반: ${upper.length}건${upper.length ? ` — $
 
 function fmt(list) {
   if (!Array.isArray(list) || !list.length) return '—'
-  return list.map((d) => (d.pos ? `${d.word}(${d.pos})` : d.word) + (d.confidence ? ` [${d.confidence}]` : '')).join(', ')
+  return list
+    .map((d) => (d.pos ? `${d.word}(${d.pos})` : d.word) + (d.meaning ? ` ${d.meaning}` : '') + (d.confidence ? ` [${d.confidence}]` : ''))
+    .join(', ')
 }
 function over(results, key) {
   return results.filter((r) => (r[key] || []).length > 2).length

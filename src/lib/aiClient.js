@@ -308,7 +308,7 @@ function normalizeBatch(results, sent) {
       properNoun,
       pos: shortPos(r.pos),
       meaning: (r.meaning || '').trim(),
-      derivatives: cleanEntries(r.derivatives, 2, cased),
+      derivatives: cleanEntries(r.derivatives, 2, cased).map(withShortMeaning),
       synonyms: cleanEntries(r.synonyms, 2, dictForm),
       antonyms: cleanEntries(r.antonyms, 2, dictForm).map((a) => ({ ...a, confidence: Number(a.confidence) || 0 })),
       missing: !byId.has(String(item.id)),
@@ -323,6 +323,20 @@ function cleanEntries(list, max, cased = toLower) {
     .filter((e) => e && typeof e.word === 'string' && e.word.trim())
     .map((e) => ({ ...e, word: cased(e.word.trim()), pos: shortPos(e.pos) }))
     .slice(0, max)
+}
+
+/**
+ * 파생어 뜻은 가장 짧게 하나만 단다. 프롬프트에도 같은 규칙을 넣었지만
+ * AI 가 "발전, 개발"처럼 늘어놓거나 괄호 설명을 붙여 보내기도 하므로 첫 뜻만 남긴다.
+ */
+export function withShortMeaning(entry) {
+  const { meaning, ...rest } = entry
+  const short = String(meaning || '')
+    .split(/[,，;/]/)[0]
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+  return short ? { ...rest, meaning: short } : rest
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   PASSAGE_SHEET,
   DEFAULT_TITLE,
   toRowObjects,
+  parseDerivatives,
 } from './exportXlsx.js'
 import { inflectionKey } from './duplicates.js'
 import { tokenize, isPhrase } from './tokenize.js'
@@ -54,18 +55,6 @@ function sheetTable(ws) {
     if (any) out.push(obj)
   }
   return out
-}
-
-/** `development (명)` 한 줄씩 → [{ word, pos }] */
-export function parseDerivatives(text) {
-  return String(text || '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const m = line.match(/^(.*?)\s*\(([^)]*)\)$/)
-      return m ? { word: m[1].trim(), pos: m[2].trim() } : { word: line }
-    })
 }
 
 /** `evolve, grow` → [{ word }] */
