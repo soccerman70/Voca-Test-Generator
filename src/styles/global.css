@@ -13,6 +13,7 @@
 
 @import '@fontsource-variable/inter';
 @import '@fontsource-variable/jetbrains-mono';
+@import '@fontsource-variable/lora';
 
 /**
  * 같은 px 값이라도 한글은 영문보다 크게 보인다.
@@ -108,6 +109,12 @@
   --font-sans: 'Inter Variable', Inter, 'Korean Adjusted', 'Pretendard', -apple-system, system-ui,
     'Segoe UI', Roboto, 'Malgun Gothic', 'Apple SD Gothic Neo', Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'D2Coding', Consolas, monospace;
+  /*
+   * 3단계 단어장 표의 본문 글꼴. 시험지 docx 의 영문 본문(Lora)과 같은 글꼴로 맞춘다.
+   * Lora 에는 한글이 없어 한글은 Korean Adjusted 부터 차례로 내려간다.
+   * src/lib/columnWidths.js 의 SERIF_STACK 과 같은 목록이어야 잰 칸 폭과 그려진 폭이 맞는다.
+   */
+  --font-serif: 'Lora Variable', Lora, 'Korean Adjusted', Pretendard, 'Malgun Gothic', serif;
 }
 
 * {
@@ -2290,13 +2297,14 @@ details.advanced[open] > summary {
   border-radius: var(--r-lg);
 }
 
+/* 최소 폭과 칸 폭은 ResultTable 이 글을 재서 정한다(columnWidths). 출처 문장 칸이 남는 폭을 받는다. */
 table.vocab {
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;
-  min-width: 1360px;
   table-layout: fixed;
-  font-size: 13px;
+  font-family: var(--font-serif);
+  font-size: 14px;
 }
 
 /* 헤더는 색을 쓰지 않는다 — 브랜드 블루는 CTA에만 */
@@ -2307,6 +2315,7 @@ table.vocab th {
   padding: 12px var(--s-sm);
   background: var(--surface-strong);
   color: var(--ink);
+  font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -2346,10 +2355,28 @@ textarea.cell-edit.hw {
 
 /* 출처 문장은 훑어보는 참고 정보라 표의 다른 글자보다 한 단계 더 낮춘다 */
 table.vocab td.sentence {
-  min-width: 300px;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--body);
+}
+
+/*
+ * 품사는 한 글자다. 칸 안쪽 · 입력칸 좌우 여백을 줄여 한글 한 글자가 넉넉히 들어가게 한다.
+ * 예전에는 입력칸 안쪽이 16px 남짓이라 "명 · 형" 의 오른쪽이 잘렸다. 한글이라 본문 글꼴(Lora) 대신 UI 글꼴로.
+ */
+table.vocab td.pos {
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.cell-edit.pos-input {
+  padding: 4px 0;
+  text-align: center;
+  font-family: var(--font-sans);
+}
+
+.cell-edit.pos-input:focus {
+  padding: 3px 0;
 }
 
 table.vocab td.center {
@@ -2375,7 +2402,7 @@ table.vocab .mark {
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   resize: vertical;
 }
@@ -2392,23 +2419,34 @@ table.vocab .mark {
 }
 
 /* 내용에 맞춰 높이가 늘어나는 셀 */
-/* 내용에 맞춰 높이가 늘어나는 셀 */
+/*
+ * 한글 뜻은 어절에서 꺾는다(keep-all) — 예전에는 글자 단위로 꺾여 "모르 / 다" 처럼 갈라졌다.
+ * 칸보다 긴 영어 낱말 하나만 그 자리에서 꺾는다(overflow-wrap).
+ */
 textarea.cell-edit.auto {
   display: block;
   overflow: hidden;
   resize: none;
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   font-family: inherit;
 }
 
+/*
+ * 원형으로 바뀐 표제어 밑의 메모(immersed → 수동태 과거분사). 예전에는 줄바꿈 없이 옆 품사 칸 위로
+ * 넘쳤다. 칸 안에서 어절 단위로 꺾는다. 한글이 섞여 UI 글꼴로 둔다.
+ */
 .norm-note {
   display: block;
-  padding-left: 6px;
-  font-size: 10px;
+  margin-top: 2px;
+  padding-left: 7px;
+  font-family: var(--font-sans);
+  font-size: 11px;
   font-weight: 500;
+  line-height: 1.4;
   color: var(--primary);
-  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .row-warn td {

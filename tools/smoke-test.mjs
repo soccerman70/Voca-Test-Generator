@@ -565,5 +565,37 @@ check('II — 형용사 · 부사가 모자라면 더 고르기', adv('II', { ..
 check('I — 표제어 수 자체가 모자라면 더 고르기', adv('I', { ...baseStats, usable: 20 }, third, 3).fix === 'more' && adv('I', { ...baseStats, usable: 20 }, third, 3).text.includes('3개뿐'))
 check('VI — 수는 충분하면 배정 다시', adv('VI').fix === 'shuffle')
 
+/* 16. 3단계 표 칸 폭 -------------------------------------------- */
+console.log('\n[16] 3단계 표 칸 폭 — 글을 재서 정하고, 좁으면 꺾여도 되는 칸만 줄인다')
+const { columnWidths, COLUMNS: TABLE_COLUMNS } = await import('../src/lib/columnWidths.js')
+const fakeMeasure = (text) => text.length * 8 // 글자 수에 비례하는 가짜 폭
+const colRow = (extra = {}) => ({
+  headword: 'lose track of time', surface: 'lose track of time', pos: '구', meaning: '시간 가는 줄 모르다',
+  derivatives: [{ word: 'interdisciplinarity', pos: '명', meaning: '학제간 연구' }],
+  synonyms: [{ word: 'comprehensively reconsider' }, { word: 'reshape' }], antonyms: [{ word: 'straightforwardly' }], ...extra,
+})
+const wide = columnWidths([colRow()], fakeMeasure)
+// 표제어 18자 × 8 = 144 + 여백 46 = 190
+check('표제어는 한 줄에 들어갈 폭', wide.widths.headword === 190, String(wide.widths.headword))
+check('품사 · 번호 · 출처는 고정 폭', wide.widths.pos === 58 && wide.widths.num === 46 && wide.widths.source === 58)
+check('출처 문장 칸은 폭을 정하지 않는다(남는 폭)', !('sentence' in wide.widths))
+check('긴 글은 상한에서 멈춘다', wide.widths.synonyms === TABLE_COLUMNS.find((c) => c.key === 'synonyms').max, String(wide.widths.synonyms))
+
+const tight = columnWidths([colRow()], fakeMeasure, 1100)
+check('좁아도 표제어는 줄이지 않는다', tight.widths.headword === wide.widths.headword)
+// interdisciplinarity 19자 × 8 + 46 = 198 — 파생어 칸은 이보다 좁아지지 않는다
+check('줄여도 가장 긴 낱말 하나는 한 줄에', tight.widths.derivatives >= 198 && tight.widths.synonyms >= 'comprehensively'.length * 8 + 46,
+  JSON.stringify(tight.widths))
+check('꺾여도 되는 칸이 줄어 화면에 맞춘다', tight.minTable <= 1100 || tight.widths.meaning === 110, `${tight.minTable}`)
+
+const cramped = columnWidths([colRow()], fakeMeasure, 900)
+check('그래도 넘치면 출처 문장이 200까지 준다', cramped.minTable === Object.values(cramped.widths).reduce((a, b) => a + b, 0) + 200,
+  `${cramped.minTable}`)
+const empty = columnWidths([], fakeMeasure)
+check('줄이 없으면 칸마다 최소 폭', empty.widths.headword === 120 && empty.widths.meaning === 110)
+check('원형 메모까지 한 줄에 — 메모가 더 길면 표제어 칸이 넓어진다',
+  columnWidths([colRow({ headword: 'bring', surface: 'brought about', normalizationNote: '완료형 과거분사' })], fakeMeasure).widths.headword ===
+    Math.round('brought about → 완료형 과거분사'.length * 8 + 46))
+
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)

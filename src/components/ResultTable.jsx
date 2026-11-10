@@ -4,6 +4,7 @@ import { downloadXlsx, formatDerivatives, formatWords, parseDerivatives } from '
 import { readWordbook, isSameWork, compareRows, compareWork } from '../lib/importXlsx.js'
 import { filesLabel } from '../lib/passages.js'
 import { confirmBeforeQuiz } from '../lib/quizGate.js'
+import { COLUMNS, columnWidths, domMeasure, loadTableFonts } from '../lib/columnWidths.js'
 import ImportNotes from './ImportNotes.jsx'
 import WorkCompare from './WorkCompare.jsx'
 
@@ -32,6 +33,33 @@ export default function ResultTable() {
   const [reading, setReading] = useState(false)
   const [appliedName, setAppliedName] = useState('')
   const fileRef = useRef(null)
+
+  /*
+   * 칸 폭은 글을 실제 글꼴(Lora)로 재서 정한다. 글꼴을 받기 전에는 대체 글꼴로 재므로,
+   * 받은 뒤 재는 함수를 새로 만들어 한 번 더 잰다.
+   */
+  const [measure, setMeasure] = useState(() => domMeasure())
+  useEffect(() => {
+    let alive = true
+    loadTableFonts().then(() => alive && setMeasure(() => domMeasure()))
+    return () => {
+      alive = false
+    }
+  }, [])
+  // 표가 들어갈 폭. 표가 화면보다 넓어지면 꺾여도 되는 칸(뜻 · 파생어 · 유의어 · 반의어)을 줄인다
+  const wrapRef = useRef(null)
+  const [available, setAvailable] = useState(Infinity)
+  useLayoutEffect(() => {
+    const el = wrapRef.current
+    if (!el) return undefined
+    const read = () => setAvailable(el.clientWidth || Infinity)
+    read()
+    if (typeof ResizeObserver === 'undefined') return undefined
+    const observer = new ResizeObserver(read)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+  const cols = useMemo(() => columnWidths(rows, measure, available), [rows, measure, available])
 
   /*
    * 줄 지우기는 확인 창 없이 바로 하고, 몇 초 동안 되돌리기를 띄운다.
@@ -276,20 +304,15 @@ export default function ResultTable() {
         )}
       </div>
 
-      <div className="table-wrap">
-        <table className="vocab">
+      <div className="table-wrap" ref={wrapRef}>
+        <table className="vocab" style={{ minWidth: cols.minTable }}>
           <thead>
             <tr>
-              <th style={{ width: 44 }}>번호</th>
-              <th style={{ width: 156 }}>표제어</th>
-              <th style={{ width: 46 }}>품사</th>
-              <th style={{ width: 142 }}>뜻</th>
-              <th style={{ width: 200 }}>파생어</th>
-              <th style={{ width: 158 }}>유의어</th>
-              <th style={{ width: 146 }}>반의어</th>
-              <th style={{ width: 62 }}>출처</th>
-              <th>출처 문장</th>
-              <th style={{ width: 40 }} />
+              {COLUMNS.map((c) => (
+                <th key={c.key} style={c.key in cols.widths ? { width: cols.widths[c.key] } : undefined}>
+                  {c.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -324,10 +347,9 @@ export default function ResultTable() {
                     </span>
                   )}
                 </td>
-                <td className="center">
+                <td className="center pos">
                   <input
-                    className="cell-edit"
-                    style={{ textAlign: 'center' }}
+                    className="cell-edit pos-input"
                     maxLength={2}
                     value={r.pos}
                     onChange={(e) => updateRow(r.id, { pos: e.target.value })}
@@ -422,6 +444,9 @@ const UNDO_MS = 7000
  * 그 사이에 끝의 공백·줄바꿈·쉼표가 정리되어 사라지므로, 그대로 보여주면 "무시할 만큼"의
  * 띄어쓰기나 다음 줄·다음 낱말을 칠 수가 없다. 그래서 편집하는 동안에는 친 글자를 그대로
  * 보여주고(draft), 저장은 지금처럼 매번 하며, 칸을 떠날 때 정리된 모양으로 되돌린다.
+ *
+ * 높이는 글이 바뀔 때만이 아니라 칸 폭이 바뀔 때도 다시 맞춘다. 칸 폭은 글을 재서 정하므로
+ * 글꼴을 받은 뒤나 다른 줄을 고친 뒤에 바뀔 수 있고, 그때 높이를 그대로 두면 꺾여 내려간 줄이 잘린다.
  */
 function AutoCell({ value, onChange, placeholder, className = '' }) {
   const ref = useRef(null)
@@ -431,9 +456,28 @@ function AutoCell({ value, onChange, placeholder, className = '' }) {
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
+    el.style.height = `${fitHeight(el)}px`
   }, [shown])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return undefined
+    const fit = () => {
+      el.style.height = `${fitHeight(el)}px`
+    }
+    // 글꼴(Lora)을 받으면 같은 폭에서도 줄 수가 달라질 수 있다
+    document.fonts?.ready.then(fit)
+    if (typeof ResizeObserver === 'undefined') return undefined
+    // 높이를 바꿔도 관찰이 다시 불리므로 폭이 바뀐 때만 맞춘다
+    let width = el.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === width) return
+      width = el.clientWidth
+      fit()
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   return (
     <textarea
@@ -450,6 +494,15 @@ function AutoCell({ value, onChange, placeholder, className = '' }) {
       placeholder={placeholder}
     />
   )
+}
+
+/**
+ * 입력칸이 글을 다 보여줄 높이. scrollHeight 는 안쪽(내용 + 여백)만이고 box-sizing 이 border-box 라
+ * 테두리를 더해야 한다. 예전에는 빼먹어 아래 2px 이 잘렸고, 꼬리가 긴 Lora(g · p · y)에서 드러났다.
+ */
+function fitHeight(el) {
+  el.style.height = 'auto'
+  return el.scrollHeight + el.offsetHeight - el.clientHeight
 }
 
 function diffText({ changed, added, removed }) {
