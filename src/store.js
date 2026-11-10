@@ -14,7 +14,7 @@ const nextId = () => `s${Date.now().toString(36)}${(seq += 1).toString(36)}`
 
 /**
  * 단어장·시험지 제목 최대 길이. 입력창의 maxLength 와 같은 값을 쓴다.
- * 시험지 헤더가 "2026 여름학기 · Week 3 · 어휘심화 SET B" 형태라 30자는 있어야 한다.
+ * 엑셀 첫 줄 · 파일 이름 · 시험지 머리(연도와 반 사이)에 들어간다. 연도 · 반 · 주차는 따로 받는다(quizHead).
  */
 export const DOC_TITLE_MAX = 30
 
@@ -31,6 +31,9 @@ const initial = {
   model: DEFAULT_MODEL,
   effort: DEFAULT_EFFORT, // claude -p --effort. 답하기 전에 얼마나 생각할지
   docTitle: '', // 엑셀 첫 줄과 파일 이름에 쓰는 단어장 제목
+  // 시험지 머리의 빈칸. 비워 두면 docx 에 손으로 쓸 빈칸(202__ · _____반 · Week #)이 남는다.
+  // 연도는 거의 언제나 올해라 미리 채워 둔다.
+  quizHead: { year: String(new Date().getFullYear()), klass: '', week: '' },
 
   focusedId: null,
   selections: [],
@@ -158,6 +161,7 @@ export const useStore = create(
 
       setTargetCount: (n) => set({ targetCount: Math.max(1, Math.min(500, Number(n) || 0)) }),
       setDocTitle: (docTitle) => set({ docTitle: String(docTitle).slice(0, DOC_TITLE_MAX) }),
+      setQuizHead: (patch) => set((s) => ({ quizHead: { ...s.quizHead, ...patch } })),
       setMode: (mode) => set({ mode }),
       setModel: (model) => set({ model }),
       setEffort: (effort) => set({ effort }),
@@ -230,6 +234,13 @@ export const useStore = create(
       removeRow: (id) =>
         set((s) => ({ rows: s.rows.filter((r) => r.id !== id), confirmedAt: null, ...NO_QUIZZES })),
 
+      /**
+       * 줄 지우기를 되돌린다. snapshot 은 지우기 직전의 { rows, quizzes, activeQuizId, confirmedAt } 이다.
+       * 줄을 지우면 만든 시험지까지 함께 지워지므로 그것도 돌려놓는다. 지운 뒤에 표가 또 바뀌었으면
+       * 돌려놓을 모습이 지금과 맞지 않으므로, 부르는 쪽(ResultTable)이 그 전에 되돌리기를 거둔다.
+       */
+      restoreRows: ({ rows, quizzes, activeQuizId, confirmedAt }) => set({ rows, quizzes, activeQuizId, confirmedAt }),
+
       /* ---------------- 시험지 ---------------- */
 
       /** 새 시험지를 목록 끝에 더하고 그것을 연다. */
@@ -300,6 +311,7 @@ export const useStore = create(
         model: s.model,
         effort: s.effort,
         docTitle: s.docTitle,
+        quizHead: s.quizHead,
         focusedId: s.focusedId,
         selections: s.selections,
         rows: s.rows,

@@ -1,29 +1,20 @@
+import { STEPS } from '../lib/steps.js'
+
 /**
  * 1단계 화면 상단의 작업 흐름 안내 스트립.
  *
- * 처음에는 시안대로 01·02 를 큰 세로 블록으로 쌓고 03~07 만 가로로 뒀는데,
- * 그러면 배너가 화면의 주인공이 되어 정작 눌러야 할 지문 업로드 상자를 밀어냈다.
- * 이건 방향 안내(direction)지 작업 자체가 아니므로, 일곱 단계를 같은 크기로
- * 한 줄에 눕히고 글자를 눌러 배경으로 물러나게 했다. 클릭 동작은 없다.
+ * 이건 방향 안내(direction)지 작업 자체가 아니므로, 한 줄에 눕히고 글자를 눌러
+ * 배경으로 물러나게 했다. 클릭 동작은 없다.
+ *
+ * 칸은 헤더의 단계 칩과 같은 네 단계다(같은 STEPS 를 본다). 예전에는 01~07 일곱 칸이라
+ * 헤더의 1~4 와 번호가 어긋나 "지금 몇 단계인지"를 두 번 세게 했다. 단계 안에서 하는 일은
+ * 번호 없이 그 칸 아래에 차례로 적는다.
  */
 
-/** 01~07 단계. 배열 순서가 곧 화면 순서다. 02 만 두 갈래라 options 를 갖는다. */
-const STEPS = [
-  { no: '01', label: '지문파일 또는 교재 텍스트 파일 올리기' },
-  {
-    no: '02',
-    label: '표제어 선택',
-    options: [
-      { key: 'manual', title: '단어 지정', icon: 'pencil' },
-      { key: 'ai', title: 'AI 자동 생성', icon: 'sparkles' },
-    ],
-  },
-  /* 실제 버튼(SelectionPanel)이 "파생어·유의어·반의어 생성 →" 이라 같은 말로 적는다 */
-  { no: '03', label: '파생어·유의어·반의어 생성' },
-  { no: '04', label: '검수' },
-  { no: '05', label: '단어시험 항목 배치' },
-  { no: '06', label: '파트별 문항 생성' },
-  { no: '07', label: '최종 단어시험지 생성' },
+/** 2단계의 두 갈래. 실제 설정 칸(표제어 선택 방식)과 같은 순서다. */
+const SELECT_OPTIONS = [
+  { key: 'manual', title: '직접 선택', icon: 'pencil' },
+  { key: 'ai', title: 'AI 자동 추출', icon: 'sparkles' },
 ]
 
 export default function WorkflowBanner() {
@@ -35,7 +26,7 @@ export default function WorkflowBanner() {
 
       <ol className="wb-flow">
         {STEPS.map((s, i) => (
-          <li className="wb-cell" key={s.no}>
+          <li className="wb-cell" key={s.key}>
             {/* 첫 칸 앞에는 이어받을 것이 없다 */}
             {i > 0 && (
               <span className="wb-arrow">
@@ -43,16 +34,27 @@ export default function WorkflowBanner() {
               </span>
             )}
             <div className="wb-body">
-              <span className="wb-num">{s.no}</span>
-              <div className="wb-label">{s.label}</div>
-              {s.options && (
+              <div className="wb-title">
+                <span className="wb-num">{s.no}</span>
+                <span className="wb-label">{s.label}</span>
+              </div>
+              {s.key === 'select' ? (
                 <div className="wb-opts">
-                  {s.options.map((o) => (
+                  {SELECT_OPTIONS.map((o) => (
                     <span className="wb-opt" key={o.key}>
                       <span className="wb-opt-icon">
                         {o.icon === 'pencil' ? <PencilIcon /> : <SparklesIcon />}
                       </span>
                       {o.title}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="wb-guide">
+                  {s.guide.map((g, j) => (
+                    <span key={g}>
+                      {j > 0 && <span className="wb-then">→</span>}
+                      {g}
                     </span>
                   ))}
                 </div>

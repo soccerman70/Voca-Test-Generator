@@ -1,11 +1,12 @@
 // 단어시험지 생성 화면 — 확정된 단어장을 6개 PART 에 나눠 담고 그 결과를 먼저 보여준다
 
 import { useEffect, useMemo, useState } from 'react'
-import { useStore } from '../store.js'
+import { useStore, DOC_TITLE_MAX } from '../store.js'
 import { allocate, verbForm, FORM_LABEL, PARTS } from '../lib/quizAllocate.js'
 import { buildPartI, buildPartIV, renderPartIVItem } from '../lib/quizBuild.js'
 import { generateQuizParts } from '../lib/quizClient.js'
-import { downloadTest, downloadAnswers } from '../lib/exportDocx.js'
+import { downloadTest, downloadAnswers, testHeadParts } from '../lib/exportDocx.js'
+import { DEFAULT_TITLE } from '../lib/exportXlsx.js'
 
 let quizSeq = 0
 
@@ -84,8 +85,20 @@ export default function QuizPanel() {
 
 /** 고른 시험지 하나. 탭을 바꾸면 key 가 바뀌어 화면 안의 오류 표시 같은 것은 새로 시작한다. */
 function QuizBody({ quiz }) {
-  const { rows, passages, model, effort, confirmedAt, docTitle, quizzes, quizBusy, addQuiz, updateQuiz, setQuizBusy } =
-    useStore()
+  const {
+    rows,
+    passages,
+    model,
+    effort,
+    confirmedAt,
+    docTitle,
+    quizHead,
+    quizzes,
+    quizBusy,
+    addQuiz,
+    updateQuiz,
+    setQuizBusy,
+  } = useStore()
   const stats = useMemo(() => allocate(rows).stats, [rows])
   const { parts, shortages, thirdDetail, ok, context, gen } = quiz
 
@@ -127,6 +140,7 @@ function QuizBody({ quiz }) {
   // 화면에서 조절한 앞뒤 문장이 그대로 문서에 실려야 한다
   const docData = () => ({
     title: docTitle,
+    head: quizHead,
     // 시험지가 여럿이면 내려받는 파일 이름이 겹치지 않게 번호를 붙인다
     fileNo: quizzes.length > 1 ? quiz.no : null,
     partI,
@@ -201,8 +215,8 @@ function QuizBody({ quiz }) {
         </div>
         <div className="quiz-body">
           <p className="hint" style={{ margin: 0 }}>
-            까다로운 PART 가 먼저 가져갑니다 (IV → III → II → V → VI → I). 한 번 쓴 말은 굴절형이 같은 것까지
-            다시 쓰지 않습니다. {quiz.seed == null ? '단어장 순서대로 배정했습니다.' : '단어장 순서를 무작위로 섞어 배정했습니다.'}
+            조건이 까다로운 PART 부터 낱말을 나눠 담습니다. 같은 말은 형태만 달라도 한 시험지에 두 번 나오지
+            않습니다. {quiz.seed == null ? '단어장 순서대로 배정했습니다.' : '단어장 순서를 무작위로 섞어 배정했습니다.'}
           </p>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -289,8 +303,8 @@ function QuizBody({ quiz }) {
         </div>
         <div className="quiz-body">
           <p className="hint" style={{ margin: 0 }}>
-            영영풀이 · 어휘 관계 · 유의어 변별 · 서사 빈칸을 만듭니다. 네 PART 는 서로 의존이 없어 동시에
-            처리합니다. 받은 결과는 규칙을 지켰는지 코드로 다시 검사합니다.
+            영영풀이 · 어휘 관계 · 유의어 고르기 · 글 빈칸 문항을 AI 가 만듭니다. 만든 문항은 아래에서 확인하고,
+            마음에 들지 않으면 다시 만들 수 있습니다.
           </p>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -330,9 +344,9 @@ function QuizBody({ quiz }) {
           <span className="count-pill">docx</span>
         </div>
         <div className="quiz-body">
+          <HeadFields />
           <p className="hint" style={{ margin: 0 }}>
-            A4 · 여백 1080 dxa · 제목 Noto Serif KR · 지시문 Noto Sans KR · 영문 본문 Lora. 1쪽에 PART I~IV,
-            2쪽에 PART V~VI 가 들어갑니다. 화면에서 조절한 앞뒤 문장이 그대로 실립니다.
+            A4 두 쪽 — 1쪽에 PART I~IV, 2쪽에 PART V~VI. 위에서 붙인 앞뒤 문장도 그대로 들어갑니다.
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn primary" onClick={() => save('test')} disabled={!gen || Boolean(saving)}>
@@ -346,6 +360,59 @@ function QuizBody({ quiz }) {
         </div>
       </div>
     </>
+  )
+}
+
+/**
+ * 시험지 머리의 빈칸(연도 · 반 · 주차)과 제목을 채우는 칸, 그리고 docx 에 찍힐 머리 줄 미리보기.
+ * 비워 둔 칸은 docx 에 손으로 쓸 빈칸으로 남는다. 제목은 1단계의 제목 칸과 같은 값이다 —
+ * 단어장을 불러와 1단계를 건너뛴 경우에도 여기서 고칠 수 있어야 한다.
+ */
+function HeadFields() {
+  const { docTitle, quizHead, setDocTitle, setQuizHead } = useStore()
+  const { lead, week } = testHeadParts(docTitle, quizHead)
+  const field = (key, label, props) => (
+    <div className={`field head-${key}`}>
+      <label htmlFor={`head-${key}`}>{label}</label>
+      <input
+        id={`head-${key}`}
+        type="text"
+        value={quizHead[key]}
+        onChange={(e) => setQuizHead({ [key]: e.target.value })}
+        {...props}
+      />
+    </div>
+  )
+
+  return (
+    <div className="head-fields">
+      <div className="head-inputs">
+        {field('year', '연도', { placeholder: '202__', maxLength: 4, inputMode: 'numeric' })}
+        <div className="field head-title">
+          <label htmlFor="head-title">제목</label>
+          <input
+            id="head-title"
+            type="text"
+            value={docTitle}
+            maxLength={DOC_TITLE_MAX}
+            onChange={(e) => setDocTitle(e.target.value)}
+            placeholder={DEFAULT_TITLE}
+          />
+        </div>
+        {field('klass', '반', { placeholder: '빈칸', maxLength: 10 })}
+        {field('week', '주차', { placeholder: '빈칸', maxLength: 6 })}
+      </div>
+      <div className="head-preview" aria-label="시험지 머리 미리보기">
+        <span className="hp-lead">{lead}</span>
+        <span className="hp-week">{week}</span>
+        <span className="hp-title">VOCABULARY TEST</span>
+        <span className="hp-name">이름: ____________</span>
+      </div>
+      <p className="hint" style={{ margin: 0 }}>
+        비워 둔 칸은 시험지에 빈칸(202__ · _____반 · Week #)으로 남아 손으로 쓸 수 있습니다. 제목은 엑셀 첫 줄과
+        내려받는 파일 이름에도 쓰입니다.
+      </p>
+    </div>
   )
 }
 

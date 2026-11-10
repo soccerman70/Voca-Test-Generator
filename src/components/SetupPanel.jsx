@@ -554,10 +554,11 @@ export default function SetupPanel() {
                   maxLength={DOC_TITLE_MAX}
                   value={docTitle}
                   onChange={(e) => setDocTitle(e.target.value)}
-                  placeholder="예) 2026 여름학기 · Week 3 · 어휘심화 SET B"
+                  placeholder="예) 겨울학기 어휘심화 SET B"
                 />
                 <span className="hint">
-                  엑셀 첫 줄, 시험지 머리글, 내려받는 파일 이름에 들어갑니다. 비워두면 기본 제목을 씁니다.
+                  엑셀 첫 줄, 시험지 머리, 내려받는 파일 이름에 들어갑니다. 비워두면 기본 제목을 씁니다. 연도 · 반 ·
+                  주차는 ④ 시험지 화면에서 따로 채웁니다.
                 </span>
               </div>
 

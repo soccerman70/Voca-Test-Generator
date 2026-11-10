@@ -94,19 +94,41 @@ function headWidth(text, pt = 10) {
 }
 
 /**
- * 시험지 머리 — 한 줄에 학기·반, 주차, 제목, 이름칸을 놓는다.
- * `202__ {단어장 제목} _____반   Week #   VOCABULARY TEST   이름: ____________`
- * 빈칸은 선생님이 docx 에서 채우거나 손으로 쓴다.
+ * 시험지 머리 왼쪽 글 — `2026 {단어장 제목} 3반` 과 `Week 5`.
+ * 연도 · 반 · 주차를 ④ 화면에서 채우면 그 값을, 비워 두면 손으로 쓸 빈칸을 넣는다.
+ * 화면의 머리 미리보기와 docx 가 같은 글을 쓰도록 여기 하나만 둔다.
+ *
+ * 사람이 `3반` · `5주차` · `Week 5` · `2026년` 처럼 붙여 써도 `3반반` · `Week 5주차` 가 되지 않게 걷어낸다.
+ *
+ * @param {string} title 단어장 · 시험지 제목. 비면 기본 제목
+ * @param {{year?: string, klass?: string, week?: string}} head
+ * @returns {{ lead: string, week: string }}
+ */
+export function testHeadParts(title, head = {}) {
+  const clean = (v, re) => String(v ?? '').trim().replace(re, '').trim()
+  const year = clean(head.year, /년$/)
+  const klass = clean(head.klass, /반$/)
+  const week = clean(head.week, /^week\s*|주차$/gi)
+  return {
+    lead: `${year || '202__'} ${String(title || '').trim() || DEFAULT_TITLE} ${klass || '_____'}반`,
+    week: `Week ${week || '#'}`,
+  }
+}
+
+/**
+ * 시험지 머리 — 한 줄에 연도 · 제목 · 반, 주차, VOCABULARY TEST, 이름칸을 놓는다.
+ * `2026 {단어장 제목} _____반   Week #   VOCABULARY TEST   이름: ____________`
+ * 비워 둔 칸은 선생님이 docx 에서 채우거나 손으로 쓴다.
  *
  * 단어장 제목은 0~30자라 길이가 제각각이다. 탭 정지로 맞추면 제목이 길 때 `Week #` 과
  * `VOCABULARY TEST` 가 다음 탭으로 밀려 줄이 깨지므로 테두리 없는 세 칸 표로 놓는다.
  * 왼쪽 글이 짧으면 양옆 칸을 같게 해 `VOCABULARY TEST` 를 쪽 가운데에 두고, 길면 왼쪽 칸을
  * 넓혀 한 줄을 지킨다(가운데 칸이 그만큼 오른쪽으로 비켜난다). 그래도 넘치면 왼쪽 칸 안에서 꺾인다.
  */
-function header(title) {
-  const lead = `202__ ${String(title || '').trim() || DEFAULT_TITLE} _____반`
+function header(title, head) {
+  const { lead, week } = testHeadParts(title, head)
   const side = (TEXT_WIDTH - HEAD_CENTER) / 2
-  const need = headWidth(`${lead}   Week #`) + 120
+  const need = headWidth(`${lead}   ${week}`) + 120
   const left = Math.min(Math.max(side, need), TEXT_WIDTH - HEAD_CENTER - HEAD_RIGHT_MIN)
   const right = TEXT_WIDTH - HEAD_CENTER - left
   const none = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
@@ -137,7 +159,7 @@ function header(title) {
         new TableRow({
           children: [
             headCell(
-              [ui(lead, { size: PT(10) }), ui('   Week #', { bold: true, size: PT(10), color: NAVY })],
+              [ui(lead, { size: PT(10) }), ui(`   ${week}`, { bold: true, size: PT(10), color: NAVY })],
               left,
               AlignmentType.LEFT,
               { left: 0, right: 120 }
@@ -302,12 +324,12 @@ function partSix(gen, choices) {
 }
 
 /**
- * @param {object} data { title, partI, partIV, partIVTexts, gen }
+ * @param {object} data { title, head, partI, partIV, partIVTexts, gen } — head 는 { year, klass, week }
  */
 export function buildTestDoc(data) {
-  const { title, partI, partIV, partIVTexts, gen } = data
+  const { title, head, partI, partIV, partIVTexts, gen } = data
   const children = [
-    ...header(title),
+    ...header(title, head),
     partHead('I', INSTRUCTION.I),
     partOneTable(partI),
     ...partTwo(gen?.byPart?.II),

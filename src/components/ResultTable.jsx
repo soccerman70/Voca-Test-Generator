@@ -1,8 +1,9 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store.js'
 import { downloadXlsx, formatDerivatives, formatWords, parseDerivatives } from '../lib/exportXlsx.js'
 import { readWordbook, isSameWork, compareRows } from '../lib/importXlsx.js'
 import { filesLabel } from '../lib/passages.js'
+import { confirmBeforeQuiz } from '../lib/quizGate.js'
 import ImportNotes from './ImportNotes.jsx'
 
 export default function ResultTable() {
@@ -19,6 +20,7 @@ export default function ResultTable() {
     setStep,
     updateRow,
     removeRow,
+    restoreRows,
     replaceWordbook,
   } = useStore()
   const [saving, setSaving] = useState(false)
@@ -28,6 +30,37 @@ export default function ResultTable() {
   const [reading, setReading] = useState(false)
   const [appliedName, setAppliedName] = useState('')
   const fileRef = useRef(null)
+
+  /*
+   * 줄 지우기는 확인 창 없이 바로 하고, 몇 초 동안 되돌리기를 띄운다.
+   * 지우면 만든 시험지까지 함께 지워지므로(NO_QUIZZES) 지우기 직전 모습을 통째로 들고 있다가 돌려놓는다.
+   * 지운 뒤에 표가 또 바뀌면(칸을 고치거나 다른 줄을 지우면) 돌려놓을 모습이 지금과 어긋나므로
+   * 그 순간 되돌리기는 사라진다 — 연달아 지우면 마지막 것만 되돌린다.
+   */
+  const [undo, setUndo] = useState(null) // { snapshot, after, label, quizCount }
+  const liveUndo = undo && undo.after === rows ? undo : null
+  useEffect(() => {
+    if (!undo) return undefined
+    const timer = setTimeout(() => setUndo(null), UNDO_MS)
+    return () => clearTimeout(timer)
+  }, [undo])
+
+  const removeWithUndo = (row) => {
+    const s = useStore.getState()
+    const snapshot = { rows: s.rows, quizzes: s.quizzes, activeQuizId: s.activeQuizId, confirmedAt: s.confirmedAt }
+    removeRow(row.id)
+    setUndo({
+      snapshot,
+      after: useStore.getState().rows,
+      label: row.headword || row.surface,
+      quizCount: s.quizzes.length,
+    })
+  }
+
+  // 표를 다 고쳤으면 다음 일은 시험지다. 헤더의 ④ 칩과 같은 점검을 거친다.
+  const goQuiz = () => {
+    if (confirmBeforeQuiz(rows)) setStep('quiz')
+  }
 
   // 패널을 띄운 채 표를 더 고칠 수도 있으므로 지금 표와 매번 다시 견준다
   const diff = useMemo(
@@ -127,8 +160,11 @@ export default function ResultTable() {
         >
           {reading ? <span className="spinner dark" /> : '⬆'} 고친 엑셀 불러오기
         </button>
-        <button className="btn primary" onClick={handleDownload} disabled={saving || !rows.length}>
-          {saving ? <span className="spinner" /> : '⬇'} 엑셀(XLSX) 다운로드
+        <button className="btn" onClick={handleDownload} disabled={saving || !rows.length}>
+          {saving ? <span className="spinner dark" /> : '⬇'} 엑셀(XLSX) 다운로드
+        </button>
+        <button className="btn primary" onClick={goQuiz} disabled={!rows.length}>
+          단어시험지 만들기 →
         </button>
       </div>
 
@@ -256,7 +292,7 @@ export default function ResultTable() {
                 <td className="center">{r.passageLabel ?? r.passageNo}</td>
                 <td className="sentence">{highlight(r.sentence, r.surface)}</td>
                 <td className="center">
-                  <button className="btn ghost sm" title="이 줄 삭제" onClick={() => removeRow(r.id)}>
+                  <button className="btn ghost sm" title="이 줄 삭제 (바로 되돌릴 수 있습니다)" onClick={() => removeWithUndo(r)}>
                     ×
                   </button>
                 </td>
@@ -265,9 +301,30 @@ export default function ResultTable() {
           </tbody>
         </table>
       </div>
+
+      {liveUndo && (
+        <div className="undo-toast" role="status">
+          <span>
+            ‘{liveUndo.label}’ 줄을 지웠습니다
+            {liveUndo.quizCount > 0 && ` · 만든 시험지 ${liveUndo.quizCount}개도 함께 지워졌습니다`}
+          </span>
+          <button
+            className="undo-btn"
+            onClick={() => {
+              restoreRows(liveUndo.snapshot)
+              setUndo(null)
+            }}
+          >
+            되돌리기
+          </button>
+        </div>
+      )}
     </div>
   )
 }
+
+/** 되돌리기를 띄워 두는 시간 */
+const UNDO_MS = 7000
 
 /**
  * 내용에 맞춰 높이가 늘어나는 셀. 표 안에서 글자가 잘리지 않게 한다.

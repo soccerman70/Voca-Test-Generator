@@ -635,12 +635,8 @@ table.vocab td.num,
 
 .wb-flow {
   display: grid;
-  /**
-   * 01·02 는 글자가 길고 02 는 갈래까지 달려서 더 준다. 03 "파생어·유의어·반의어"는
-   * 공백이 없어 통째로 한 줄을 차지하므로, 폭이 모자라면 가운뎃점에서 끊긴다.
-   * 그 말이 한 줄에 들어갈 만큼만 넓혀 뒀다.
-   */
-  grid-template-columns: 1.5fr 1.5fr 1.3fr repeat(4, 1fr);
+  /* 헤더의 네 단계와 같은 네 칸. 4단계는 하는 일이 셋이라 조금 더 준다. */
+  grid-template-columns: 1fr 1fr 1fr 1.25fr;
   align-items: start;
   margin: 0;
   padding: 0;
@@ -668,15 +664,30 @@ table.vocab td.num,
   padding-right: var(--s-sm);
 }
 
-/* 단계 번호는 숫자라 모노 — 파일 상단 number-display 규칙을 따른다 */
+/* 번호와 단계 이름을 헤더의 단계 칩처럼 한 줄에 놓는다 */
+.wb-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 단계 번호는 숫자라 모노 — 파일 상단 number-display 규칙을 따른다. 헤더 칩의 번호 원과 같은 꼴 */
 .wb-num {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-full);
+  background: var(--primary);
+  color: var(--on-primary);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  font-size: 15px;
+  font-size: 12px;
   line-height: 1;
-  color: var(--primary);
 }
 
 /**
@@ -688,7 +699,7 @@ table.vocab td.num,
  * 들어가는 말에 한해 그때만 끊기게 한다.
  */
 .wb-label {
-  margin-top: 5px;
+  min-width: 0;
   font-size: 14px;
   font-weight: 600;
   line-height: 1.35;
@@ -697,7 +708,21 @@ table.vocab td.num,
   color: var(--body);
 }
 
-/* 02 의 두 갈래. 카드였던 것을 줄글로 낮춰 스트립 높이를 넘기지 않게 한다. */
+/* 단계 안에서 차례로 하는 일. 번호 없이 화살표로 잇는다 */
+.wb-guide {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  word-break: keep-all;
+}
+
+.wb-then {
+  margin: 0 4px;
+  color: var(--muted-soft);
+}
+
+/* 2단계의 두 갈래. 카드였던 것을 줄글로 낮춰 스트립 높이를 넘기지 않게 한다. */
 .wb-opts {
   display: flex;
   flex-wrap: wrap;
@@ -757,25 +782,6 @@ table.vocab td.num,
   width: 11px;
   height: 11px;
   display: block;
-}
-
-/* 좁은 화면에서는 일곱 칸이 글자당 두세 자로 쪼개진다. 줄을 나눠 접는다. */
-@media (max-width: 1100px) {
-  .wb-flow {
-    grid-template-columns: repeat(4, 1fr);
-    gap: var(--s-sm) 0;
-  }
-
-  /* 줄이 바뀌는 칸은 왼쪽 경계선과 화살표가 흐름을 거꾸로 읽히게 한다 */
-  .wb-cell:nth-child(4n + 1) .wb-arrow {
-    display: none;
-  }
-
-  .wb-cell:nth-child(4n + 1) .wb-body {
-    border-left: 0;
-    padding-left: 0;
-    padding-right: var(--s-sm);
-  }
 }
 
 @media (max-width: 700px) {
@@ -2347,6 +2353,77 @@ textarea.cell-edit.auto {
   gap: 10px;
 }
 
+/*
+ * 시험지 머리 칸 — 연도 · 제목 · 반 · 주차. 제목만 길어서 남는 폭을 다 준다.
+ * 연도 · 반 · 주차는 서너 글자라 .field 기본 최소폭(150px)을 풀어 줄인다.
+ */
+.head-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.head-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-sm);
+  align-items: flex-end;
+}
+
+.head-inputs .field input[type='text'] {
+  min-width: 0;
+  height: 40px;
+  font-size: 15px;
+}
+
+.head-year input[type='text'] {
+  width: 84px;
+  font-family: var(--font-mono);
+}
+
+.head-klass input[type='text'],
+.head-week input[type='text'] {
+  width: 96px;
+}
+
+.head-title {
+  flex: 1 1 220px;
+}
+
+.head-title input[type='text'] {
+  width: 100%;
+}
+
+/*
+ * docx 머리 줄 미리보기. 문서의 남색(1F4E79) · 아래 실선 · 가운데 제목을 그대로 따라
+ * "내려받으면 이렇게 찍힌다"를 한눈에 보인다. 실제 배치(세 칸 표)와 똑같이 맞추지는 않는다.
+ */
+.head-preview {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 10px 2px 6px;
+  border-bottom: 2px solid #1f4e79;
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.hp-week {
+  font-weight: 700;
+  color: #1f4e79;
+}
+
+.hp-title {
+  flex: 1;
+  text-align: center;
+  font-family: 'Noto Serif KR', Georgia, serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: #1f4e79;
+}
+
 /* 만든 시험지 목록. 고른 것만 파란 테두리로 띄운다 */
 .quiz-tabs {
   display: flex;
@@ -2697,4 +2774,43 @@ table.quiz-preview td.qa {
 .result-view .error-box,
 .result-view .notice-box {
   font-size: 13px;
+}
+
+/*
+ * 줄 지우기 되돌리기 알림. 표 위에 떠서 화면 아래 가운데에 몇 초 머문다.
+ * 어두운 면 하나에 글과 버튼만 — 확인 창처럼 흐름을 막지 않는다.
+ */
+.undo-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 50;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px 10px 18px;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+}
+
+.undo-btn {
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.undo-btn:hover {
+  background: #e4ecff;
 }

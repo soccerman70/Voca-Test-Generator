@@ -503,5 +503,17 @@ check('남긴 줄은 넘쳐도 건드리지 않는다', stuck.rows[0].antonyms.l
 const solo = enforceAntonymRatio([ant('n1', 0.9), noAnt('n2')])
 check('keep 없이 부르면 예전과 같다', solo.stats.total === 2 && solo.rows[0].antonyms.length === 1, JSON.stringify(solo.stats))
 
+/* 13. 시험지 머리 ---------------------------------------------- */
+console.log('\n[13] 시험지 머리 — 연도 · 제목 · 반 · 주차')
+const { testHeadParts } = await import('../src/lib/exportDocx.js')
+const headOf = (title, head) => JSON.stringify(testHeadParts(title, head))
+check('빈 칸은 손으로 쓸 빈칸으로', headOf('', {}) === JSON.stringify({ lead: '202__ 정상JLS 심화단어장 _____반', week: 'Week #' }), headOf('', {}))
+check('채운 칸은 그 값으로', headOf('겨울학기', { year: '2026', klass: '3', week: '5' }) === JSON.stringify({ lead: '2026 겨울학기 3반', week: 'Week 5' }))
+check('3반 · 5주차 · 2026년 처럼 붙여 써도 겹치지 않음',
+  headOf('겨울학기', { year: '2026년', klass: '3반', week: '5주차' }) === JSON.stringify({ lead: '2026 겨울학기 3반', week: 'Week 5' }),
+  headOf('겨울학기', { year: '2026년', klass: '3반', week: '5주차' }))
+check('Week 5 · week5 도 Week 5', testHeadParts('t', { week: 'Week 5' }).week === 'Week 5' && testHeadParts('t', { week: 'week5' }).week === 'Week 5')
+check('앞뒤 공백 · 공백뿐인 칸', headOf('  t  ', { year: ' ', klass: ' A ' }) === JSON.stringify({ lead: '202__ t A반', week: 'Week #' }), headOf('  t  ', { year: ' ', klass: ' A ' }))
+
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)
