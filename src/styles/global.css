@@ -233,6 +233,36 @@ table.vocab td.num,
   line-height: 0;
 }
 
+/*
+ * 버전 배지는 제목 오른쪽에 붙인다. 제목과 한 묶음으로 흐름 안에 두어야 화면이 좁을 때
+ * 배지가 단계 칩 위로 올라타지 않고 제목 그림이 대신 줄어든다.
+ */
+.brand-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.brand-title-row h1 {
+  min-width: 0;
+}
+
+.app-version {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--r-pill);
+  color: var(--on-dark-soft);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: default;
+}
+
 /**
  * 원본이 739×94(약 7.9:1)이라 높이를 1px 키울 때마다 폭이 8px씩 늘어난다.
  * 32px 면 폭 252px — 헤더 높이의 절반이라 위아래 여백이 남고 단계 칩과도 부딪히지 않는다.

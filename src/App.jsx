@@ -3,6 +3,10 @@ import Workspace from './components/Workspace.jsx'
 import ResultTable from './components/ResultTable.jsx'
 import QuizPanel from './components/QuizPanel.jsx'
 import { useStore } from './store.js'
+import { version } from '../package.json'
+
+/** 화면에 찍는 버전. package.json 이 원본이다. 끝자리가 0 이면 줄여 "1.0" 으로 보인다. */
+const APP_VERSION = version.replace(/\.0$/, '')
 
 const STEPS = [
   { key: 'input', no: 1, label: '지문 입력' },
@@ -32,9 +36,14 @@ export default function App() {
         </div>
 
         <div className="brand-titles">
-          <h1>
-            <img src="/vlist-title.png" alt="JLS 고등부 심화 단어장" />
-          </h1>
+          <div className="brand-title-row">
+            <h1>
+              <img src="/vlist-title.png" alt="JLS 고등부 심화 단어장" />
+            </h1>
+            <span className="app-version" title={`버전 ${version}`}>
+              v{APP_VERSION}
+            </span>
+          </div>
         </div>
 
         <div className="steps">
