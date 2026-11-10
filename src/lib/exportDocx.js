@@ -18,7 +18,10 @@ import {
   AlignmentType,
   BorderStyle,
   VerticalAlign,
+  TableLayoutType,
+  LineRuleType,
 } from 'docx'
+import { DEFAULT_TITLE } from './exportXlsx.js'
 
 /** 제목용 — 시험지 상단 타이틀과 대제목 */
 const F_TITLE = { ascii: 'Noto Serif KR', eastAsia: 'Noto Serif KR', hAnsi: 'Noto Serif KR' }
@@ -38,6 +41,12 @@ const LINE = 'BFBFBF'
  * 줄간격 240 이 1.0줄이므로 228 은 0.95줄.
  */
 const MARGIN = 720
+/** A4 폭 11906 에서 좌우 여백을 뺀 본문 폭 */
+const TEXT_WIDTH = 11906 - MARGIN * 2
+/** 머리 줄 가운데 칸 — 14pt 굵은 `VOCABULARY TEST` 가 한 줄에 드는 폭 */
+const HEAD_CENTER = 3100
+/** 머리 줄 오른쪽 칸의 최소 폭 — `이름: ____________` */
+const HEAD_RIGHT_MIN = 2300
 const BODY_PT = 9.5
 const LINE_SPACING = 228
 
@@ -75,21 +84,77 @@ const table = (rows) =>
 /* 공통 조각                                                           */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 10pt 글자의 폭을 twips 로 어림한다. 한글 1em, 빈칸 0.3em, 나머지 0.6em —
+ * 실제보다 조금 넉넉하게 잡아 칸이 모자라 줄이 꺾이는 쪽보다 가운데에서 조금 비켜나는 쪽으로 틀린다.
+ */
+function headWidth(text, pt = 10) {
+  const em = [...text].reduce((w, ch) => w + (/[ㄱ-ㆎ가-힣]/.test(ch) ? 1 : ch === ' ' ? 0.3 : 0.6), 0)
+  return Math.ceil(em * pt * 20)
+}
+
+/**
+ * 시험지 머리 — 한 줄에 학기·반, 주차, 제목, 이름칸을 놓는다.
+ * `202__ {단어장 제목} _____반   Week #   VOCABULARY TEST   이름: ____________`
+ * 빈칸은 선생님이 docx 에서 채우거나 손으로 쓴다.
+ *
+ * 단어장 제목은 0~30자라 길이가 제각각이다. 탭 정지로 맞추면 제목이 길 때 `Week #` 과
+ * `VOCABULARY TEST` 가 다음 탭으로 밀려 줄이 깨지므로 테두리 없는 세 칸 표로 놓는다.
+ * 왼쪽 글이 짧으면 양옆 칸을 같게 해 `VOCABULARY TEST` 를 쪽 가운데에 두고, 길면 왼쪽 칸을
+ * 넓혀 한 줄을 지킨다(가운데 칸이 그만큼 오른쪽으로 비켜난다). 그래도 넘치면 왼쪽 칸 안에서 꺾인다.
+ */
 function header(title) {
+  const lead = `202__ ${String(title || '').trim() || DEFAULT_TITLE} _____반`
+  const side = (TEXT_WIDTH - HEAD_CENTER) / 2
+  const need = headWidth(`${lead}   Week #`) + 120
+  const left = Math.min(Math.max(side, need), TEXT_WIDTH - HEAD_CENTER - HEAD_RIGHT_MIN)
+  const right = TEXT_WIDTH - HEAD_CENTER - left
+  const none = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
+
+  const headCell = (children, width, alignment, margins) =>
+    new TableCell({
+      children: [new Paragraph({ children, alignment })],
+      width: { size: width, type: WidthType.DXA },
+      verticalAlign: VerticalAlign.CENTER,
+      // 바깥쪽 여백을 0 으로 두어 글자가 본문 좌우 끝선에 맞는다
+      margins: { top: 0, bottom: 60, ...margins },
+    })
+
   return [
-    new Paragraph({
-      children: [
-        ui(title || '어휘 심화 TEST', { font: F_TITLE, bold: true, size: PT(12), color: NAVY }),
-        ui('\t\t이름: ____________   학번: ____________', { size: PT(9) }),
+    new Table({
+      columnWidths: [left, HEAD_CENTER, right],
+      width: { size: TEXT_WIDTH, type: WidthType.DXA },
+      layout: TableLayoutType.FIXED,
+      borders: {
+        top: none,
+        left: none,
+        right: none,
+        insideHorizontal: none,
+        insideVertical: none,
+        bottom: { style: BorderStyle.SINGLE, size: 6, color: NAVY },
+      },
+      rows: [
+        new TableRow({
+          children: [
+            headCell(
+              [ui(lead, { size: PT(10) }), ui('   Week #', { bold: true, size: PT(10), color: NAVY })],
+              left,
+              AlignmentType.LEFT,
+              { left: 0, right: 120 }
+            ),
+            headCell(
+              [ui('VOCABULARY TEST', { font: F_TITLE, bold: true, size: PT(14), color: NAVY })],
+              HEAD_CENTER,
+              AlignmentType.CENTER,
+              { left: 0, right: 0 }
+            ),
+            headCell([ui('이름: ____________', { size: PT(10) })], right, AlignmentType.RIGHT, { left: 120, right: 0 }),
+          ],
+        }),
       ],
-      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: NAVY } },
-      spacing: { after: 90 },
     }),
-    new Paragraph({
-      children: [ui('VOCABULARY TEST', { font: F_TITLE, bold: true, size: PT(16), color: NAVY })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 140 },
-    }),
+    // 표 아래 선과 PART I 사이 — 예전 머리 문단의 아래 여백(160)과 같게
+    new Paragraph({ children: [], spacing: { before: 0, after: 0, line: 160, lineRule: LineRuleType.EXACT } }),
   ]
 }
 
@@ -120,10 +185,10 @@ function choiceBox(items) {
 }
 
 const INSTRUCTION = {
-  I: '우리말에 해당하는 영어 단어 또는 어구를 쓰시오.',
+  I: '우리말에 해당하는 영어 단어 또는 어구를 쓰시오. (표제어 쓰기)',
   II: '다음 영영풀이에 해당하는 단어를 보기에서 고르시오.',
   III: '주어진 두 단어의 관계와 같도록 빈칸에 알맞은 단어를 쓰시오.',
-  IV: '문장의 빈칸에 들어갈 동사를 보기에서 골라 바른 형태로 쓰시오.',
+  IV: '문장의 빈칸에 들어갈 동사를 보기에서 골라 바른 형태로 쓰시오. (각 단어는 한 번씩만 쓸 것)',
   V: '빈칸에 들어가기에 적절한 단어를 모두 고르시오.',
   VI: '글의 빈칸에 들어갈 낱말을 보기에서 고르시오.',
 }
