@@ -12,6 +12,7 @@
 
 import { inflectionKey } from './duplicates.js'
 import { isPhrase } from './tokenize.js'
+import { hasQuestionBlank } from './passages.js'
 
 /** 배정 순서대로. need 는 그 PART 가 필요로 하는 표제어 수. */
 export const PARTS = [
@@ -84,6 +85,9 @@ function takeDiverseVerbs(candidates, need, ledger) {
 }
 
 const isPhraseRow = (row) => row.pos === '구' || isPhrase(row.surface || row.headword)
+const isVerbRow = (row) => row.pos === '동' && !isPhraseRow(row)
+/** PART IV 에 쓸 수 있는 동사 — 출처 문장에 문항 빈칸이 남아 있지 않아야 한다 */
+const isQuizVerb = (row) => isVerbRow(row) && !hasQuestionBlank(row.sentence)
 const countOf = (list) => (Array.isArray(list) ? list.length : 0)
 
 /** 시드를 받는 난수 (mulberry32). 같은 시드면 같은 수열이 나와 배정을 다시 만들 수 있다. */
@@ -142,8 +146,9 @@ export function allocate(rows, { seed } = {}) {
 
   const parts = {}
 
-  // IV — 동사. 어구는 형태 변형 문항에 맞지 않아 제외한다
-  parts.IV = takeDiverseVerbs(pool.filter((r) => r.pos === '동' && !isPhraseRow(r)), 5, ledger)
+  // IV — 동사. 어구는 형태 변형 문항에 맞지 않아 제외한다.
+  // 출처 문장에 요약문 빈칸 (A)·(B) 가 남은 동사도 뺀다 — 문항에 빈칸이 둘 찍힌다 (Week 09 검수 24번)
+  parts.IV = takeDiverseVerbs(pool.filter(isQuizVerb), 5, ledger)
 
   // III — 파생 2 · 유의 1 · 반의 2. 세 갈래를 각각 채운다
   const derivative = take((r) => countOf(r.derivatives) >= 1, 2)
@@ -207,6 +212,12 @@ export function shortageAdvice(shortage, stats, thirdDetail) {
   const short = stats.usable < stats.required
   switch (shortage.part) {
     case 'IV':
+      if (stats.verbs < 5 && stats.blankVerbs > 0 && stats.verbs + stats.blankVerbs >= 5) {
+        return {
+          text: `동사 ${stats.blankVerbs}개는 출처 문장에 요약문 빈칸 (A)·(B) 가 남아 쓰지 못했습니다. 엑셀에서 그 문장을 고쳐 다시 불러오면 쓸 수 있습니다.`,
+          fix: 'fill',
+        }
+      }
       return stats.verbs < 5
         ? { text: `동사 표제어가 ${stats.verbs}개뿐입니다. ${lack(stats.verbs, 5)}개 더 있어야 합니다.`, fix: 'more' }
         : { text: `동사는 ${stats.verbs}개 있지만 형태가 같은 말끼리 겹쳐 모자랐습니다.`, fix: 'shuffle' }
@@ -258,7 +269,7 @@ export function summarize(usable, all) {
   for (const row of usable) byPos[row.pos || '?'] = (byPos[row.pos || '?'] || 0) + 1
 
   const verbForms = {}
-  for (const row of usable.filter((r) => r.pos === '동' && !isPhraseRow(r))) {
+  for (const row of usable.filter(isQuizVerb)) {
     const form = verbForm(row.surface, row.headword)
     verbForms[form] = (verbForms[form] || 0) + 1
   }
@@ -268,7 +279,9 @@ export function summarize(usable, all) {
     usable: usable.length,
     properNoun: all.length - usable.filter((r) => r.headword).length,
     byPos,
-    verbs: usable.filter((r) => r.pos === '동' && !isPhraseRow(r)).length,
+    verbs: usable.filter(isQuizVerb).length,
+    /** 동사지만 출처 문장에 문항 빈칸이 남아 PART IV 에 못 쓰는 것 */
+    blankVerbs: usable.filter((r) => isVerbRow(r) && hasQuestionBlank(r.sentence)).length,
     verbForms,
     adjAdv: usable.filter((r) => r.pos === '형' || r.pos === '부').length,
     phrases: usable.filter(isPhraseRow).length,

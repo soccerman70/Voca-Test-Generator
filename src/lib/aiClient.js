@@ -12,7 +12,7 @@ const ANTONYM_MIN_RATIO = 0.3
  * node 로 도는 점검 도구(tools/*.mjs)는 출처가 없으므로 VOCA_API_BASE 로 dev 서버를 가리킨다.
  * 도구가 임포트 뒤에 포트를 정할 수 있어야 하므로 값은 부를 때마다 읽는다.
  */
-function apiBase() {
+export function apiBase() {
   if (typeof window !== 'undefined') return ''
   return globalThis.process?.env?.VOCA_API_BASE || 'http://localhost:5180'
 }

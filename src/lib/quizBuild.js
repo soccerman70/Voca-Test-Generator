@@ -8,7 +8,7 @@
  * 화면에서 사람이 보고 expandContext 로 앞뒤 문장을 붙인다.
  */
 
-import { splitSentences } from './passages.js'
+import { splitSentences, stripParagraphLabel, hasQuestionBlank } from './passages.js'
 import { verbForm } from './quizAllocate.js'
 
 export const BLANK = '_______________'
@@ -67,7 +67,7 @@ export function buildPartIV(rows, startNo = 21) {
   const items = rows.map((row, i) => ({
     no: startNo + i,
     rowId: row.id,
-    sentence: row.sentence || '',
+    sentence: stripParagraphLabel(row.sentence || ''),
     answer: row.surface,
     base: row.headword,
     form: verbForm(row.surface, row.headword),
@@ -114,22 +114,32 @@ export function renderPartIVItem(item, passages) {
 
   if (!passage) return fallback()
 
-  const sentences = splitSentences(passage.english)
+  // 순서 배열 문항의 단락 이름표 "(A) …" 는 지문에 남아 있을 수 있다(옛 단어장) — 문항에 찍지 않는다
+  const sentences = splitSentences(passage.english).map(stripParagraphLabel)
   const idx = findSentence(sentences, item)
   if (idx === -1) return fallback()
 
-  const from = Math.max(0, idx - (item.before || 0))
-  const to = Math.min(sentences.length - 1, idx + (item.after || 0))
+  /*
+   * 요약문처럼 빈칸 (A)·(B) 가 남은 문장은 문항에 싣지 않는다.
+   * 출처 문장 자체가 그런 문장이면 단어장에서 빈칸을 채운 문장(item.sentence)을 쓰고,
+   * 앞뒤 문장을 붙일 때는 그런 문장 앞에서 멈춘다 — 요약문은 대개 지문 맨 끝에 붙어 있다.
+   */
+  const own = hasQuestionBlank(sentences[idx]) && !hasQuestionBlank(item.sentence) ? item.sentence : sentences[idx]
+  let from = idx
+  while (from > 0 && idx - from < (item.before || 0) && !hasQuestionBlank(sentences[from - 1])) from -= 1
+  let to = idx
+  while (to < sentences.length - 1 && to - idx < (item.after || 0) && !hasQuestionBlank(sentences[to + 1])) to += 1
   const text = sentences
     .slice(from, to + 1)
-    .map((s, k) => (from + k === idx ? blankOut(s, item.answer) : s))
+    .map((s, k) => (from + k === idx ? blankOut(own, item.answer) : s))
     .join(' ')
 
   return {
     text,
     words: countWords(text),
     overLimit: countWords(text) > 40,
-    atStart: from === 0,
-    atEnd: to === sentences.length - 1,
+    // 더 붙일 문장이 없으면 버튼을 막는다. 빈칸이 남은 문장은 붙일 수 없으므로 끝으로 본다
+    atStart: from === 0 || hasQuestionBlank(sentences[from - 1]),
+    atEnd: to === sentences.length - 1 || hasQuestionBlank(sentences[to + 1]),
   }
 }

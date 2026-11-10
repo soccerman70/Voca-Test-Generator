@@ -127,11 +127,20 @@ function QuizBody({ quiz }) {
   const genBusy = Boolean(genProgress)
   const [genError, setGenError] = useState('')
 
-  const runGenerate = async () => {
+  /** only 가 PART 목록이면 그 PART 만 다시 만들고 나머지는 지금 결과를 둔다 (버튼 onClick 은 이벤트를 넘긴다) */
+  const runGenerate = async (only) => {
     const id = quiz.id
+    const list = Array.isArray(only) ? only : null
     setGenError('')
     try {
-      const result = await generateQuizParts({ parts, model, effort, onProgress: (p) => setQuizBusy(id, p) })
+      const result = await generateQuizParts({
+        parts,
+        model,
+        effort,
+        onProgress: (p) => setQuizBusy(id, p),
+        only: list,
+        previous: list ? gen : null,
+      })
       updateQuiz(id, { gen: result })
     } catch (err) {
       setGenError(err.message)
@@ -436,7 +445,14 @@ function QuizBody({ quiz }) {
                 </div>
               )}
               {['II', 'III', 'V', 'VI'].map((key) => (
-                <GeneratedPart key={key} partKey={key} data={gen.byPart[key]} choices={gen.choices[key]} />
+                <GeneratedPart
+                  key={key}
+                  partKey={key}
+                  data={gen.byPart[key]}
+                  choices={gen.choices[key]}
+                  busy={genBusy}
+                  onRegenerate={() => runGenerate([key])}
+                />
               ))}
             </>
           )}
@@ -476,19 +492,25 @@ function QuizBody({ quiz }) {
  */
 function HeadFields() {
   const { docTitle, quizHead, setDocTitle, setQuizHead } = useStore()
-  const { lead, week } = testHeadParts(docTitle, quizHead)
-  const field = (key, label, props) => (
-    <div className={`field head-${key}`}>
-      <label htmlFor={`head-${key}`}>{label}</label>
-      <input
-        id={`head-${key}`}
-        type="text"
-        value={quizHead[key]}
-        onChange={(e) => setQuizHead({ [key]: e.target.value })}
-        {...props}
-      />
-    </div>
-  )
+  const { lead, week, fromTitle } = testHeadParts(docTitle, quizHead)
+  // 제목에 연도 · 주차가 들어 있으면 그 칸은 제목 값을 쓴다 — 칸을 잠그고 무엇을 쓰는지 보여준다
+  const field = (key, label, props) => {
+    const taken = fromTitle[key]
+    return (
+      <div className={`field head-${key}`}>
+        <label htmlFor={`head-${key}`}>{label}</label>
+        <input
+          id={`head-${key}`}
+          type="text"
+          value={taken || quizHead[key]}
+          onChange={(e) => setQuizHead({ [key]: e.target.value })}
+          disabled={Boolean(taken)}
+          title={taken ? '제목에 들어 있는 값을 씁니다. 바꾸려면 제목을 고치세요' : undefined}
+          {...props}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="head-fields">
@@ -517,6 +539,8 @@ function HeadFields() {
       <p className="hint" style={{ margin: 0 }}>
         비워 둔 칸은 시험지에 빈칸(202__ · _____반 · Week #)으로 남아 손으로 쓸 수 있습니다. 제목은 엑셀 첫 줄과
         내려받는 파일 이름에도 쓰입니다.
+        {(fromTitle.year || fromTitle.week) &&
+          ` 제목에 ${[fromTitle.year && '연도', fromTitle.week && '주차'].filter(Boolean).join(' · ')}가 들어 있어 그 값을 머리 칸에 옮겨 씁니다.`}
       </p>
     </div>
   )
@@ -577,7 +601,7 @@ const PART_TITLE = {
 }
 
 /** AI 가 만든 PART 하나. 규칙을 어긴 곳은 노란 선으로 알린다. */
-function GeneratedPart({ partKey, data, choices }) {
+function GeneratedPart({ partKey, data, choices, busy, onRegenerate }) {
   if (!data) return null
   const bad = data.issues?.length > 0 || data.error
 
@@ -587,6 +611,16 @@ function GeneratedPart({ partKey, data, choices }) {
         <span className="qp-no">PART {partKey}</span>
         <span className="qp-label">{PART_TITLE[partKey]}</span>
         {data.durationMs != null && <span className="qi-words">{Math.round(data.durationMs / 1000)}초</span>}
+        {/* 검사에 걸린 PART 하나 때문에 네 PART 를 다 다시 만들지 않는다 */}
+        <button
+          className={`btn sm${bad ? '' : ' ghost'}`}
+          style={{ marginLeft: 'auto' }}
+          onClick={onRegenerate}
+          disabled={busy}
+          title="이 PART 만 다시 만듭니다. 다른 PART 는 그대로 둡니다"
+        >
+          이 PART 만 다시
+        </button>
       </div>
 
       {data.error && <div className="qp-detail" style={{ color: 'var(--semantic-down)' }}>{data.error}</div>}
@@ -634,6 +668,7 @@ function PartBody({ partKey, result, choices }) {
               {' '}
               → {it.answer} · {it.relation}
               {it.note ? ` · ${it.note}` : ''}
+              {it.hintClash?.length > 0 && it.hintUnique !== false && ` · 힌트를 늘림 (${it.hintClash.join(', ')} 와 겹쳐서)`}
             </span>
           </p>
         ))}

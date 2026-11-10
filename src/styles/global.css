@@ -2519,9 +2519,13 @@ textarea.cell-edit.auto {
   font-family: var(--font-mono);
 }
 
-.head-klass input[type='text'],
-.head-week input[type='text'] {
+.head-klass input[type='text'] {
   width: 96px;
+}
+
+/* 제목에서 가져온 `WEEK 09` 도 잘리지 않게 */
+.head-week input[type='text'] {
+  width: 116px;
 }
 
 .head-title {

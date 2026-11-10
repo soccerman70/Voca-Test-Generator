@@ -128,7 +128,7 @@ const CHOICE_ORDER = [...'①②③④⑤⑥⑦⑧⑨⑩']
 function apparatusLines(lines) {
   const skip = new Set()
   lines.forEach((line, i) => {
-    if (FOOTNOTE_LINE.test(line) || QUESTION_STEM.test(line)) skip.add(i)
+    if (FOOTNOTE_LINE.test(line) || QUESTION_STEM.test(line) || LABEL_ONLY_LINE.test(line)) skip.add(i)
     else if (CHOICE_LINE.test(line) && !ENDS_SENTENCE.test(line)) skip.add(i)
     if (!QUESTION_STEM.test(line)) return
     const block = []
@@ -140,6 +140,62 @@ function apparatusLines(lines) {
     if (block.length >= 3) block.forEach((j) => skip.add(j))
   })
   return skip
+}
+
+/**
+ * 순서 배열 문항의 단락 이름표. "(A) So, living in …" 처럼 단락 첫머리에 붙는다.
+ * 빈칸이 아니라 이름표라 걷어내면 그만이다. 뒤에 대문자(또는 여는 따옴표)가 와야 이름표로 본다 —
+ * 요약문의 "(A) conversation …" 같은 빈칸은 문장 가운데에 오고 뒤에 소문자가 온다.
+ * (Week 07 검수: 출처 문장 26개가 "(A) …" · "(C) …" 로 시작했다)
+ */
+const PARAGRAPH_LABEL = /^\s*[(（]\s*[A-E]\s*[)）]\s+(?=["'“‘]?[A-Z])/
+
+/** 순서 배열 문항 보기 위의 "(A)   (B)" 처럼 이름표만 있는 줄 */
+const LABEL_ONLY_LINE = /^\s*(?:[(（]\s*[A-E]\s*[)）]\s*)+$/
+
+export function stripParagraphLabel(text) {
+  return String(text ?? '').replace(PARAGRAPH_LABEL, '')
+}
+
+/**
+ * 문장 안에 남은 문항 장치 — 요약문 빈칸 "(A)" · "____(B)____", 밑줄 빈칸, 어법 고르기 "[is / are]".
+ * 이런 문장이 출처 문장이 되면 단어장과 시험지 PART IV 에 빈칸이 그대로 찍힌다
+ * (Week 09 검수: 요약문에만 나온 표제어 7개, 그중 intensify 가 PART IV 24번에 들어갔다).
+ */
+const BLANK_MARK = /[(（]\s*[A-E]\s*[)）]|_{3,}|\[[^\]/]+\/[^\]]+\]/g
+
+/** 문장에 남은 빈칸 표시를 겹치지 않게 돌려준다 — ['(A)', '(B)'] 처럼. 없으면 빈 배열. */
+export function questionBlanks(sentence) {
+  const found = stripParagraphLabel(sentence).match(BLANK_MARK) || []
+  const labels = found
+    .map((m) => {
+      const letter = m.match(/^[(（]\s*([A-E])\s*[)）]$/)
+      if (letter) return `(${letter[1]})`
+      return m.startsWith('[') ? m : '밑줄 빈칸'
+    })
+    // "____(A)____" 는 밑줄과 (A) 가 함께 걸린다. 이름이 있으면 밑줄은 따로 세지 않는다
+    .filter((label, _, all) => label !== '밑줄 빈칸' || !all.some((l) => l.startsWith('(')))
+  return [...new Set(labels)]
+}
+
+export const hasQuestionBlank = (sentence) => questionBlanks(sentence).length > 0
+
+/**
+ * 요약문 문장 — 빈칸 이름표 (A) · (B) 가 둘 이상 든 한 문장.
+ * "The study above shows (A) conversation … may (B) personal growth." 처럼 지문 끝에 붙는 문항 장치라
+ * 지문에 넣지 않는다(사용자 결정, Week 09 검수 뒤). 요약문에만 나온 말은 표제어 후보에도 오르지 않는다.
+ * 연결어 · 빈칸 문항의 "(A)" 는 본문 문장마다 하나씩이라 걸리지 않는다 — 그런 문장은 본문이다.
+ */
+export function isSummarySentence(sentence) {
+  return questionBlanks(sentence).filter((label) => /^\([A-E]\)$/.test(label)).length >= 2
+}
+
+/** 지문에서 요약문 문장을 뺀다. 요약문이 없으면 받은 글을 그대로 돌려준다. */
+export function dropSummarySentences(english) {
+  const text = String(english ?? '')
+  const sentences = splitSentences(text)
+  if (!sentences.some(isSummarySentence)) return text
+  return sentences.filter((s) => !isSummarySentence(s)).join(' ').replace(/\s{2,}/g, ' ').trim()
 }
 
 /** 동그라미 번호 표시를 지우고 그 자리에 생긴 빈칸을 정리한다. */
@@ -297,7 +353,7 @@ function buildPassage(id, no, lines) {
     if (skip.has(i)) continue
     const kind = classifyLine(line)
     if (kind === 'en') {
-      const cleaned = stripInsertionMarks(stripKoreanInline(line))
+      const cleaned = stripParagraphLabel(stripInsertionMarks(stripKoreanInline(line)))
       if (cleaned) en.push(cleaned)
     } else if (kind === 'ko') {
       ko.push(stripInsertionMarks(line))
@@ -306,7 +362,8 @@ function buildPassage(id, no, lines) {
   return {
     id,
     no,
-    english: en.join(' ').replace(/\s{2,}/g, ' ').trim(),
+    // 요약문 문장은 지문이 아니라 문항 장치다 — 표제어 후보 · 출처 문장 · PART IV 문맥에 들지 않게 뺀다
+    english: dropSummarySentences(en.join(' ').replace(/\s{2,}/g, ' ').trim()),
     korean: ko.join('\n').trim(),
   }
 }

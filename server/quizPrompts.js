@@ -7,6 +7,12 @@
  */
 
 import { JSON_ONLY } from './prompts.js'
+import {
+  BEYOND_EXAM_DISTRACTORS,
+  EXAM_LEVEL_DISTRACTOR_EXAMPLES,
+  STORY_OPENINGS,
+  STORY_ENDINGS,
+} from '../src/lib/quizRules.js'
 
 const COMMON = `너는 한국 고등학생 대상 수능 영어 어휘 심화 시험지를 만드는 출제자다.
 문항은 실제 학평 수준이어야 하고, 학생이 어림짐작으로 맞힐 수 있으면 안 된다.`
@@ -93,6 +99,13 @@ ${COMMON}
 - A : B 도 반의어 쌍이어야 한다 (예: present : absent, always : never).
 - **정답의 첫 글자**를 hint 에 넣는다.
 
+## 4) 첫 글자 힌트로 정답이 하나로 좁혀져야 한다 (유의어 · 반의어 문항)
+- 정답과 **같은 첫 글자로 시작하면서 같은 관계가 되는 다른 흔한 말**이 있으면 학생이 그 말을 써도 틀렸다고 할 수 없다.
+  (stretch 의 반의어 s___ → shrink 도 shorten 도 맞다 · respective 의 반의어 c___ → common 도 collective 도 맞다)
+- 그래서 후보 가운데 **그런 말이 없는 것을 정답으로 우선 고른다.**
+- 어느 후보를 골라도 그런 말이 있으면, 그 말들을 rivals 에 **빠짐없이** 적는다. 코드가 힌트 글자를 늘려
+  (shr___ · com___) 정답만 남게 한다. 그런 말이 없으면 rivals 는 빈 배열이다.
+
 ## 공통
 - 다섯 문항의 관계 유형(동사:명사 / 형용사:명사 / 동사:형용사 / 부사:부사 …)이 서로 겹치지 않게 흩어라.
 - 정답은 반드시 아래에 주어진 후보 안에서 고른다. 없는 말을 지어내지 마라.
@@ -117,6 +130,7 @@ ${antonym.map((it) => line(it, ` — 반의어 후보: ${it.antonyms.join(', ')}
       "headword": "C (주어진 표제어 그대로)",
       "answer": "정답",
       "hint": "정답 첫 글자 (파생어 문항은 빈 문자열)",
+      "rivals": ["같은 첫 글자로 시작하고 같은 관계가 되는 다른 말 (없으면 빈 배열)"],
       "relation": "관계 설명 (예: 동사 → 명사 파생)",
       "note": "어미가 어떻게 다른지 20자 이내 (파생어 문항만)"
     }
@@ -163,8 +177,19 @@ ${COMMON}
 - **정답 개수를 문항마다 다르게 한다.** ${items.length}문항 전체에서 3개 정답 1~2문항,
   2개 정답 1~2문항, 1개 정답 1문항이 되도록 흩어라.
 - 정답은 표제어와 그 유의어에서 고른다. 표제어를 일부러 정답에서 빼고 유의어만 정답으로 삼아도 된다.
-- 오답은 반대 방향 어휘로 만든다. 주어진 반의어를 우선 쓰고, 모자라면 밖에서 가져와도 된다.
-- **오답에 쉬운 단어를 쓰지 마라.** weaken 대신 undermine, emancipate 급으로 쓴다.
+- **선택지 난이도는 고3(수능) 수준에 맞춘다.** 한국 고3 학생이 수능을 준비하며 익히는 어휘로 오답을 고른다.
+  기초어(good, bad, fail, lose, happy 같은 중학 수준 말)만으로 채우지 말고, 그렇다고 수능 범위를 넘는 드문 말 · 문어적인 말 ·
+  낯선 숙어도 쓰지 마라 — 학생은 문맥 단서로 오답을 걸러내야 한다.
+  (✗ 수능을 넘는 말: ${BEYOND_EXAM_DISTRACTORS.join(', ')}
+   ✓ 수능 수준: ${EXAM_LEVEL_DISTRACTOR_EXAMPLES.join(', ')})
+- **오답을 반대 뜻 말로만 채우지 마라.** 정답은 같은 뜻 무리, 오답은 모두 반대 뜻 무리로 짜면 학생이 뜻의 방향만 보고
+  두 무리를 갈라 풀 수 있다. 한 문항의 오답 가운데 반대 방향 말은 **많아야 2개**이고, 나머지 오답은
+  - 같은 화제에서 나올 법하지만 이 문장의 문맥 단서와 맞지 않는 말
+    (예: 빈칸이 '함께 고생한 동반자' 자리인데 witness, stranger)
+  - 뜻은 그럴듯하지만 빈칸 앞뒤 말과 어울리지 않는 말(연어 · 어법이 안 맞는 말)
+  로 섞는다. 반의어 후보는 그 2개 안에서만 쓴다.
+- 어떤 오답도 문맥상 들어갈 여지가 있으면 안 된다. 문장 속 단서 하나로 **분명히** 걸러져야 한다.
+- ${items.length}개 문항의 오답 구성을 서로 다르게 한다. 다섯 문항이 한 가지 틀로 보이면 안 된다.
 - 정답과 오답을 섞어 배치한다. 정답이 특정 번호에 몰리지 않게 한다.
 
 ## 대상 표제어
@@ -178,6 +203,7 @@ ${body}
       "sentence": "빈칸이 든 25~40단어 문장",
       "choices": ["①에 올 말", "②", "③", "④", "⑤"],
       "answers": [2, 4, 5],
+      "roles": ["반대", "정답", "문맥", "정답", "정답"],
       "clues": ["정답 방향을 가리키는 표현", "또 하나"],
       "wrongWhy": "오답이 왜 안 되는지 40자 이내 한국어",
       "translation": "문장 전체의 한국어 번역"
@@ -185,14 +211,23 @@ ${body}
   ]
 }
 
-answers 는 1부터 시작하는 번호다. items 는 입력 ${items.length}개 전부를 순서대로 포함해야 한다.`
+answers 는 1부터 시작하는 번호다. roles 는 choices 와 같은 순서로, 정답이면 "정답", 반대 방향 오답이면 "반대",
+문맥 · 어울림이 안 맞는 오답이면 "문맥" 이다. items 는 입력 ${items.length}개 전부를 순서대로 포함해야 한다.`
 }
 
 /* ------------------------------------------------------------------ */
 /* PART VI — 지문형 빈칸 (서사)                                        */
 /* ------------------------------------------------------------------ */
 
-export function buildPartVIPrompt({ items, startNo = 31 }) {
+/**
+ * @param {{items, startNo?: number, opening?: number, ending?: number}} payload
+ *   opening · ending 은 STORY_OPENINGS · STORY_ENDINGS 의 번호. 없으면 여기서 무작위로 고른다 —
+ *   같은 틀을 매주 되풀이하지 않게 한다.
+ */
+export function buildPartVIPrompt({ items, startNo = 31, opening, ending }) {
+  const pick = (list, i) => list[Number.isInteger(i) && i >= 0 && i < list.length ? i : Math.floor(Math.random() * list.length)]
+  const openWith = pick(STORY_OPENINGS, opening)
+  const endWith = pick(STORY_ENDINGS, ending)
   const body = items
     .map((it, i) => `${i + 1}. id=${it.id}  ${it.headword} (${it.pos}) — 뜻: ${it.meaning}`)
     .join('\n')
@@ -208,8 +243,16 @@ ${COMMON}
 ## 서사 규칙
 - **90~110 단어.** 인물 한 사람을 중심으로 한 이야기여야 한다.
 - 직업·배경을 구체적으로 잡는다 (교사·의사·예술가·자원봉사자·과학자·제빵사·농부 등).
-- 끈기·헌신·친절·공동체 같은 **보편적 가치**로 마무리한다.
 - 고등학생이 읽어서 흥미로울 만한 내용으로 쓴다.
+- **도입: ${openWith}.**
+  "Elena Ruiz spent thirty years as a child psychologist in a coastal town." 처럼 이름 · 경력 연수 · 직업 · 장소를
+  한 문장에 늘어놓는 소개로 시작하지 마라. "[이름] spent/had spent N years as a [직업] …" 틀은 금지다.
+  인물의 직업과 배경은 장면 속에서 자연스럽게 드러낸다.
+- **마무리: ${endWith}.**
+  교훈 · 칭찬 · 요약 문장으로 끝내지 마라. 인물의 덕목(patience, persistence, kindness, dedication, respect …)을
+  이름 붙여 말하는 문장은 금지다. 금지 예: "His patience proved that steady care builds community." ·
+  "Her quiet persistence inspired the whole lab." · "…, and she treated each one with patience and respect."
+  인물이 어떤 사람인지는 행동과 장면으로만 보여준다.
 
 ## 빈칸 규칙
 - 빈칸은 ${items.length}개. 본문에 \`{${numbers[0]}}\` \`{${numbers[1]}}\` … 형태로 번호를 넣어 표시한다.

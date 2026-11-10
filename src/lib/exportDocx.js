@@ -100,19 +100,53 @@ function headWidth(text, pt = 10) {
  *
  * 사람이 `3반` · `5주차` · `Week 5` · `2026년` 처럼 붙여 써도 `3반반` · `Week 5주차` 가 되지 않게 걷어낸다.
  *
+ * 제목에 연도나 주차가 이미 들어 있으면(`2027 겨울학기 [실력반] WEEK 09`) 그것을 쓰고 제목에서 뺀다.
+ * 그러지 않으면 `2026 2027 겨울학기 [실력반] WEEK 09 _____반  Week #` 처럼 두 번 찍힌다
+ * (Week 07~09 검수에서 3주 연속 지적). 연도 칸은 올해로 미리 채워져 있어 사람이 고른 값이 아니므로
+ * 제목 쪽이 이긴다. 화면은 fromTitle 을 보고 그 칸을 잠근다.
+ *
  * @param {string} title 단어장 · 시험지 제목. 비면 기본 제목
  * @param {{year?: string, klass?: string, week?: string}} head
- * @returns {{ lead: string, week: string }}
+ * @returns {{ lead: string, week: string, fromTitle: {year: string, week: string} }}
  */
 export function testHeadParts(title, head = {}) {
   const clean = (v, re) => String(v ?? '').trim().replace(re, '').trim()
-  const year = clean(head.year, /년$/)
+  const { rest, year: titleYear, week: titleWeek } = splitTitleHead(title)
+  const year = titleYear || clean(head.year, /년$/)
   const klass = clean(head.klass, /반$/)
   const week = clean(head.week, /^week\s*|주차$/gi)
   return {
-    lead: `${year || '202__'} ${String(title || '').trim() || DEFAULT_TITLE} ${klass || '_____'}반`,
-    week: `Week ${week || '#'}`,
+    lead: `${year || '202__'} ${rest || DEFAULT_TITLE} ${klass || '_____'}반`,
+    week: titleWeek || `Week ${week || '#'}`,
+    fromTitle: { year: titleYear, week: titleWeek },
   }
+}
+
+/**
+ * 제목에서 연도(`2027`, `2027년`)와 주차(`WEEK 09`, `Week_9`, `9주차`)를 떼어 낸다.
+ * 주차는 적힌 모양(`WEEK 09`)을 그대로 살린다 — `9주차` 만 `Week 9` 로 맞춘다.
+ * 파일 이름에서 온 제목(`2027_겨울학기_[실력반]_WEEK_09`)처럼 밑줄로 이은 것도 읽는다.
+ */
+export function splitTitleHead(title) {
+  let rest = String(title || '').trim()
+  let year = ''
+  let week = ''
+  const y = rest.match(/(?:^|[\s_])(20\d{2})년?(?=[\s_]|$)/)
+  if (y) {
+    year = y[1]
+    rest = rest.replace(y[0], ' ')
+  }
+  const w = rest.match(/(?:^|[\s_])(week|wk)[\s_.-]*(\d{1,2})(?=[\s_]|$)/i)
+  const k = w ? null : rest.match(/(?:^|[\s_])(\d{1,2})\s*주차(?=[\s_]|$)/)
+  if (w) {
+    week = `${w[1].toLowerCase() === 'wk' ? 'Week' : w[1]} ${w[2]}`
+    rest = rest.replace(w[0], ' ')
+  } else if (k) {
+    week = `Week ${k[1]}`
+    rest = rest.replace(k[0], ' ')
+  }
+  rest = rest.replace(/^[\s_]+|[\s_]+$/g, '').replace(/\s{2,}/g, ' ')
+  return { rest, year, week }
 }
 
 /**

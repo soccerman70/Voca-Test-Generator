@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store.js'
 import { downloadXlsx, formatDerivatives, formatWords, parseDerivatives } from '../lib/exportXlsx.js'
 import { readWordbook, isSameWork, compareRows, compareWork } from '../lib/importXlsx.js'
-import { filesLabel } from '../lib/passages.js'
+import { filesLabel, hasQuestionBlank, questionBlanks } from '../lib/passages.js'
 import { confirmBeforeQuiz } from '../lib/quizGate.js'
 import { COLUMNS, columnWidths, domMeasure, loadTableFonts } from '../lib/columnWidths.js'
 import { headwordOverlaps } from '../lib/duplicates.js'
@@ -87,6 +87,12 @@ export default function ResultTable() {
       quizCount: s.quizzes.length,
     })
   }
+
+  /*
+   * 문항 빈칸 (A)·(B) 가 남은 출처 문장. 지금은 지문을 나눌 때 요약문 문장을 빼므로 새로 만든 단어장에는
+   * 생기지 않는다. 그 전에 만든 단어장을 불러왔을 때 짚는다 (Week 09 검수본에 7줄).
+   */
+  const blankRows = useMemo(() => rows.filter((r) => hasQuestionBlank(r.sentence)), [rows])
 
   // 표를 다 고쳤으면 다음 일은 시험지다. 헤더의 ④ 칩과 같은 점검을 거친다.
   const goQuiz = () => {
@@ -264,6 +270,15 @@ export default function ResultTable() {
           </div>
         </div>
       )}
+      {blankRows.length > 0 && (
+        <div className="notice-box">
+          출처 문장 {blankRows.length}개에 문항 빈칸{' '}
+          {[...new Set(blankRows.flatMap((r) => questionBlanks(r.sentence)))].join(' · ')} 이 남아 있습니다. 대개 요약문에서
+          고른 표제어입니다 — 지금은 요약문을 지문에 넣지 않아 새로 만들면 이런 줄이 생기지 않습니다. 이대로 두면 단어장에
+          빈칸이 찍히고, 시험지 PART IV 는 이 줄의 동사를 쓰지 않습니다. 줄을 지우거나 엑셀에서 문장을 고쳐 다시 불러오세요
+          (위 <strong>출처 문장 빈칸</strong> 칩으로 모아 볼 수 있습니다).
+        </div>
+      )}
       {filterCounts.missing > 0 && (
         <div className="notice-box">
           AI 응답에서 {filterCounts.missing}개 항목이 누락되어 원래 선택 그대로 채웠습니다 (아래 노란 줄). 해당 줄만 직접
@@ -399,7 +414,10 @@ export default function ResultTable() {
                   <OverlapNote hits={overlaps.get(r.id)} kind="반의어" />
                 </td>
                 <td className="center">{r.passageLabel ?? r.passageNo}</td>
-                <td className="sentence">{highlight(r.sentence, r.surface)}</td>
+                <td className="sentence">
+                  {highlight(r.sentence, r.surface)}
+                  <SentenceNote row={r} />
+                </td>
                 <td className="center">
                   <button className="btn ghost sm" title="이 줄 삭제 (바로 되돌릴 수 있습니다)" onClick={() => removeWithUndo(r)}>
                     ×
@@ -446,7 +464,19 @@ const ROW_FILTERS = [
   { key: 'edited', label: '내가 고친 줄', test: (r) => Boolean(r.edited) },
   { key: 'overlap', label: '다른 표제어와 겹침', test: (r, ctx) => ctx.overlaps.has(r.id) },
   { key: 'dropped', label: '뺀 파생어', test: (r) => (r.droppedDerivatives || []).length > 0 },
+  { key: 'sentence', label: '출처 문장 빈칸', test: (r) => hasQuestionBlank(r.sentence) },
 ]
+
+/** 출처 문장 아래의 짚음 — 문항 빈칸 (A)·(B) 가 남은 문장 */
+function SentenceNote({ row }) {
+  const blanks = questionBlanks(row.sentence)
+  if (!blanks.length) return null
+  return (
+    <span className="cell-warn" title="문항의 빈칸 표시가 남은 문장입니다. 줄을 지우거나 엑셀에서 문장을 고치세요">
+      빈칸 {blanks.join(' · ')} 남음
+    </span>
+  )
+}
 
 /** 유의어 · 반의어 칸 아래의 짚음 — "= 79번 표제어 (blunted)" */
 function OverlapNote({ hits, kind }) {

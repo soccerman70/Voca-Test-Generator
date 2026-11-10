@@ -506,7 +506,10 @@ check('keep 없이 부르면 예전과 같다', solo.stats.total === 2 && solo.r
 /* 13. 시험지 머리 ---------------------------------------------- */
 console.log('\n[13] 시험지 머리 — 연도 · 제목 · 반 · 주차')
 const { testHeadParts } = await import('../src/lib/exportDocx.js')
-const headOf = (title, head) => JSON.stringify(testHeadParts(title, head))
+const headOf = (title, head) => {
+  const { lead, week } = testHeadParts(title, head)
+  return JSON.stringify({ lead, week })
+}
 check('빈 칸은 손으로 쓸 빈칸으로', headOf('', {}) === JSON.stringify({ lead: '202__ 정상JLS 심화단어장 _____반', week: 'Week #' }), headOf('', {}))
 check('채운 칸은 그 값으로', headOf('겨울학기', { year: '2026', klass: '3', week: '5' }) === JSON.stringify({ lead: '2026 겨울학기 3반', week: 'Week 5' }))
 check('3반 · 5주차 · 2026년 처럼 붙여 써도 겹치지 않음',
@@ -514,6 +517,13 @@ check('3반 · 5주차 · 2026년 처럼 붙여 써도 겹치지 않음',
   headOf('겨울학기', { year: '2026년', klass: '3반', week: '5주차' }))
 check('Week 5 · week5 도 Week 5', testHeadParts('t', { week: 'Week 5' }).week === 'Week 5' && testHeadParts('t', { week: 'week5' }).week === 'Week 5')
 check('앞뒤 공백 · 공백뿐인 칸', headOf('  t  ', { year: ' ', klass: ' A ' }) === JSON.stringify({ lead: '202__ t A반', week: 'Week #' }), headOf('  t  ', { year: ' ', klass: ' A ' }))
+// Week 07~09 검수: 제목에 연도 · 주차가 있으면 "2026 2027 겨울학기 … WEEK 09 _____반  Week #" 로 두 번 찍혔다
+check('제목의 연도 · 주차를 머리 칸으로 옮긴다',
+  headOf('2027 겨울학기 [실력반] WEEK 09', { year: '2026' }) === JSON.stringify({ lead: '2027 겨울학기 [실력반] _____반', week: 'WEEK 09' }),
+  headOf('2027 겨울학기 [실력반] WEEK 09', { year: '2026' }))
+check('제목에서 가져온 칸을 알린다', JSON.stringify(testHeadParts('2027 겨울학기 Week 9', {}).fromTitle) === JSON.stringify({ year: '2027', week: 'Week 9' }))
+check('9주차 · 2027년 도 읽는다', headOf('2027년 겨울학기 9주차', {}) === JSON.stringify({ lead: '2027 겨울학기 _____반', week: 'Week 9' }), headOf('2027년 겨울학기 9주차', {}))
+check('제목 가운데 숫자는 건드리지 않는다', headOf('수능 2000제', { year: '2026' }) === JSON.stringify({ lead: '2026 수능 2000제 _____반', week: 'Week #' }), headOf('수능 2000제', { year: '2026' }))
 
 /* 14. 불러올 단어장을 지금 작업과 견주기 --------------------------- */
 console.log('\n[14] 불러올 단어장 견주기 — week7 작업에 week6 단어장')
@@ -577,7 +587,9 @@ const colRow = (extra = {}) => ({
 const wide = columnWidths([colRow()], fakeMeasure)
 // 표제어 18자 × 8 = 144 + 여백 46 = 190
 check('표제어는 한 줄에 들어갈 폭', wide.widths.headword === 190, String(wide.widths.headword))
-check('품사 · 번호 · 출처는 고정 폭', wide.widths.pos === 58 && wide.widths.num === 46 && wide.widths.source === 58)
+check('품사 · 번호는 고정 폭, 짧은 출처는 최소 폭', wide.widths.pos === 58 && wide.widths.num === 46 && wide.widths.source === 58)
+// 지문 번호가 `Week9-10` 처럼 길면 출처 칸이 넓어져 문장 칸을 덮지 않는다 (Week 09 화면에서 겹쳐 보였다)
+check('긴 지문 번호는 출처 칸을 넓힌다', columnWidths([colRow({ passageLabel: 'Week9-10' })], fakeMeasure).widths.source > 58)
 check('출처 문장 칸은 폭을 정하지 않는다(남는 폭)', !('sentence' in wide.widths))
 check('긴 글은 상한에서 멈춘다', wide.widths.synonyms === TABLE_COLUMNS.find((c) => c.key === 'synonyms').max, String(wide.widths.synonyms))
 
@@ -642,6 +654,92 @@ check('다른 표제어 목록이 프롬프트에 실린다', withOthers.include
 check('목록이 없으면 그 절도 없다', !buildEnrichPrompt({ items: promptItem }).includes('## 7)'))
 check('유의어는 고3 수준까지 · 되도록 2개', withOthers.includes('되도록 2개') && withOthers.includes('고3'))
 
+/* 18. 시험지 검수 반영 (Week 09) ----------------------------------- */
+console.log('\n[18] 시험지 검수 반영 — 요약문 빼기 · 선택지 난이도 · 이야기 틀 · 힌트')
+const { questionBlanks, hasQuestionBlank, stripParagraphLabel, splitPassages: splitP, isSummarySentence, dropSummarySentences } =
+  await import('../src/lib/passages.js')
+const summary = 'The study above shows (A) conversation with companions intensifies emotional response, suggesting that absence of alone time may (B) personal growth.'
+check('요약문 빈칸 (A) · (B) 를 찾는다', questionBlanks(summary).join() === '(A),(B)', questionBlanks(summary).join())
+check('밑줄로 감싼 ____(A)____ 도 (A) 하나', questionBlanks('was more ____(A)____ in those').join() === '(A)')
+check('어법 고르기 [was / were] 도 빈칸', hasQuestionBlank('The data [was / were] collected.'))
+check('보통 문장은 빈칸 아님', !hasQuestionBlank('Type A blood is common (see Table 2).'))
+check('순서 배열 단락 이름표는 걷는다', stripParagraphLabel('(C) When large carnivores are lurking.') === 'When large carnivores are lurking.')
+check('요약문 빈칸은 이름표가 아니다', stripParagraphLabel('(A) conversation with') === '(A) conversation with')
+
+check('(A) · (B) 가 둘 든 한 문장은 요약문', isSummarySentence(summary) && isSummarySentence('was more ____(A)____ in those who were ____(B)____ of it.'))
+check('연결어 빈칸 (A) 하나뿐인 본문 문장은 요약문이 아니다', !isSummarySentence('(A), the results showed a clear pattern.') && !isSummarySentence('In short (A) they won.'))
+
+const summaryDoc = [
+  '1. 다음 글의 내용을 한 문장으로 요약하고자 한다. 빈칸 (A), (B)에 들어갈 말로 가장 적절한 것은?',
+  'People who are never alone find it harder to learn. They miss the chance to reflect on themselves.',
+  summary,
+  '(A)\t\t(B)',
+  '①\tavoiding\t……\tinhibit',
+  '②\trecalling\t……\trestrain',
+  '2. 다음 글의 순서로 가장 적절한 것은?',
+  'Cities change all the time. Planners cannot freeze them.',
+  '(A) So, living in groups offered advantages over other groups.',
+  '(B) This is best seen in markets.',
+].join('\n')
+const sp = splitP(summaryDoc).passages
+// 사용자 결정 (Week 09 검수 뒤) — 요약문 문장은 지문에 넣지 않는다. 요약문에만 나온 말은 표제어 후보에도 오르지 않는다
+check('요약문 문장은 지문에 넣지 않는다', !/study above|intensifies/.test(sp[0]?.english || '') && /reflect on themselves\.$/.test(sp[0]?.english || ''), sp[0]?.english)
+check('보기 · "(A) (B)" 줄도 본문에 없다', !/avoiding|\(A\)\s*\(B\)/.test(sp[0]?.english || ''), sp[0]?.english)
+check('순서 배열 이름표는 본문에서 걷힌다', !/\([AB]\) /.test(sp[1]?.english || '') && /So, living/.test(sp[1]?.english || ''), sp[1]?.english)
+check('옛 지문(엑셀 숨김 시트)의 요약문도 뺀다', dropSummarySentences(`Body one. Body two. ${summary}`) === 'Body one. Body two.')
+check('요약문이 없으면 지문을 그대로 둔다', dropSummarySentences('Body one.  Body two.') === 'Body one.  Body two.')
+
+const { renderPartIVItem: renderIV } = await import('../src/lib/quizBuild.js')
+const ivPassage = { no: 9, english: `People who are never alone find it harder to learn. They miss the chance to reflect on themselves. ${summary}` }
+// 옛 단어장에서 요약문 출처 문장을 엑셀로 고쳐 왔으면, 지문에 남은 요약문 대신 고친 문장을 쓴다
+const fixedSummary = summary.replace('(A)', 'avoiding').replace('(B)', 'inhibit')
+const ivFixed = renderIV({ passageNo: 9, sentence: fixedSummary, answer: 'intensifies', before: 0, after: 0 }, [ivPassage])
+check('PART IV — 요약문 출처 문장을 고쳐 왔으면 고친 문장을 쓴다', !/\([AB]\)/.test(ivFixed.text) && ivFixed.text.includes('avoiding'), ivFixed.text)
+const ivNext = renderIV({ passageNo: 9, sentence: 'They miss the chance to reflect on themselves.', answer: 'miss', before: 0, after: 1 }, [ivPassage])
+check('PART IV — 뒤 문장을 붙여도 요약문은 붙지 않는다', !/\([AB]\)/.test(ivNext.text) && ivNext.atEnd, ivNext.text)
+const ivLabel = renderIV({ passageNo: 1, sentence: 'So, living in groups offered advantages.', answer: 'offered', before: 0, after: 0 }, [{ no: 1, english: '(A) So, living in groups offered advantages. (B) This is best seen in markets.' }])
+check('PART IV — 옛 지문의 단락 이름표를 찍지 않는다', !ivLabel.text.startsWith('('), ivLabel.text)
+
+const blankVerb = { id: 'bv', headword: 'intensify', surface: 'intensifies', pos: '동', sentence: summary }
+const verbRows = ['adapt', 'blossom', 'carry', 'drift', 'evolve'].map((w, i) => ({ id: `v${i}`, headword: w, surface: w, pos: '동', sentence: `They ${w} slowly.` }))
+const alloc = allocate([blankVerb, ...verbRows])
+check('PART IV 는 출처 문장에 빈칸이 남은 동사를 쓰지 않는다', !alloc.parts.IV.some((r) => r.id === 'bv') && alloc.parts.IV.length === 5)
+check('빈칸이 남은 동사 수를 따로 센다', alloc.stats.blankVerbs === 1 && alloc.stats.verbs === 5, JSON.stringify({ v: alloc.stats.verbs, b: alloc.stats.blankVerbs }))
+const fewVerbs = allocate([blankVerb, ...verbRows.slice(0, 4)])
+const ivAdvice = shortageAdvice({ part: 'IV', got: 4, need: 5 }, fewVerbs.stats, fewVerbs.thirdDetail)
+check('동사가 모자라면 빈칸 남은 문장을 고치라고 한다', ivAdvice.fix === 'fill' && ivAdvice.text.includes('빈칸'), ivAdvice.text)
+
+const { uniqueHint, storyPatternIssues, isBeyondExamDistractor } = await import('../src/lib/quizRules.js')
+check('힌트 — stretch 의 반의어 shrink 는 shorten 과 갈리게 shr', uniqueHint('shrink', ['shorten']).hint === 'shr')
+check('힌트 — respective 의 반의어 common 은 collective 와 갈리게 com', uniqueHint('common', ['collective']).hint === 'com')
+check('힌트 — 겹치는 말이 없으면 한 글자', uniqueHint('conceal', ['hide', 'conceal']).hint === 'c')
+check('힌트 — 정답이 다른 말의 앞부분이면 못 갈린다', uniqueHint('common', ['commonplace']).unique === false)
+const { resolveHints } = await import('../src/lib/quizClient.js')
+const iii = { items: [{ id: 's1', kind: 'antonym', headword: 'stretch', answer: 'shrink', hint: 's', rivals: [] }] }
+resolveHints(iii, { antonym: [{ id: 's1', antonyms: ['shrink', 'shorten'] }] })
+check('힌트 — 단어장의 다른 반의어도 겹침으로 본다', iii.items[0].hint === 'shr' && iii.items[0].hintClash.join() === 'shorten', JSON.stringify(iii.items[0]))
+
+// 사용자 결정 — 선택지는 고3(수능) 수준까지. 수능 어휘(adversary · harness)는 쓰고, 수능을 넘는 드문 말만 짚는다
+check('오답 — 수능을 넘는 드문 말을 알아본다', ['mendicant', 'Junta', 'lapse into oblivion'].every(isBeyondExamDistractor))
+check('오답 — 수능 어휘 · 쉬운 말은 통과', !['adversary', 'harness', 'stagnation', 'enemy', 'give up'].some(isBeyondExamDistractor))
+const w09story = 'Elena Ruiz spent thirty years as a child psychologist in a coastal town. She watched children sort toys, and she treated each one with patience and respect.'
+check('이야기 — "이름 spent N years as a 직업" 도입을 짚는다', storyPatternIssues(w09story).some((x) => x.includes('첫 문장')))
+check('이야기 — 덕목으로 끝나면 짚는다', storyPatternIssues(w09story).some((x) => x.includes('마지막')))
+check('이야기 — Dr. 같은 약어에서 첫 문장이 끊기지 않는다', storyPatternIssues('Dr. Mina Park had spent twelve years as an immunologist in Busan. She left.').some((x) => x.includes('첫 문장')))
+check('이야기 — 장면으로 끝나면 통과', storyPatternIssues('At five in the morning, the dock was dark. Mara checked the ropes. She handed the boy his cap.').length === 0)
+
+const { buildPartIIIPrompt, buildPartVPrompt, buildPartVIPrompt } = await import('../server/quizPrompts.js')
+const qItem = { id: 'q', headword: 'stretch', pos: '동', meaning: '늘이다' }
+const vPrompt = buildPartVPrompt({ items: [{ ...qItem, synonyms: ['extend', 'lengthen'], antonyms: ['shrink'] }] })
+check('PART V — 선택지는 고3 수준 · 수능을 넘는 말 목록이 실린다', vPrompt.includes('고3(수능) 수준에 맞춘다') && vPrompt.includes('mendicant') && !vPrompt.includes('고2'))
+check('PART V — 반대 뜻 오답은 많아야 2개 · roles 를 받는다', vPrompt.includes('많아야 2개') && vPrompt.includes('"roles"'))
+check('PART V — "쉬운 단어를 쓰지 마라" 는 없다', !vPrompt.includes('쉬운 단어를 쓰지 마라'))
+const viPrompt = buildPartVIPrompt({ items: [qItem], opening: 1, ending: 2 })
+check('PART VI — 고른 도입 · 마무리 틀이 실린다', viPrompt.includes('대사') && viPrompt.includes('반전'))
+check('PART VI — 소개 틀 · 교훈 마무리를 금한다', viPrompt.includes('spent/had spent N years') && viPrompt.includes('교훈'))
+check('PART VI — "보편적 가치로 마무리" 는 없다', !viPrompt.includes('가치**로 마무리'))
+const iiiPrompt = buildPartIIIPrompt({ derivative: [], synonym: [], antonym: [{ ...qItem, antonyms: ['shrink', 'shorten'] }] })
+check('PART III — 같은 첫 글자 다른 답을 rivals 로 받는다', iiiPrompt.includes('rivals') && iiiPrompt.includes('shorten'))
 
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)

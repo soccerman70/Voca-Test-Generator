@@ -12,6 +12,7 @@ import {
 } from './exportXlsx.js'
 import { inflectionKey } from './duplicates.js'
 import { tokenize, isPhrase } from './tokenize.js'
+import { stripParagraphLabel, dropSummarySentences } from './passages.js'
 
 /** 셀 값 → 문자열. 서식 있는 글자와 수식 결과도 평문으로 꺼낸다. */
 export function cellText(cell) {
@@ -299,7 +300,8 @@ export function parseWorkbook(wb) {
       synonyms: parseWords(v.synonyms),
       // confidence 는 생성 단계에서만 읽히므로 담지 않았다. 개수만 맞으면 배정에 지장이 없다.
       antonyms: parseWords(v.antonyms).map((a) => ({ ...a, confidence: 0 })),
-      sentence: v.sentence,
+      // 순서 배열 문항의 단락 이름표 "(A) …" 는 옛 파일에 남아 있을 수 있다 — 이름표일 뿐이라 걷는다
+      sentence: stripParagraphLabel(v.sentence),
       surface,
       passageNo,
       passageLabel: String(m?.passageLabel || '').trim() || v.source,
@@ -315,7 +317,8 @@ export function parseWorkbook(wb) {
         id: String(p.id || `ip${i + 1}`),
         no: Number(p.no) || i + 1,
         label: String(p.label || i + 1),
-        english: String(p.english || ''),
+        // 옛 파일의 지문에는 요약문 문장이 들어 있다. 지금 지문 나누기와 같게 뺀다
+        english: dropSummarySentences(String(p.english || '')),
         korean: String(p.korean || ''),
       }))
     : []

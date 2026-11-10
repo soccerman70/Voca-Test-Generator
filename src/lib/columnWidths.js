@@ -81,7 +81,15 @@ export const COLUMNS = [
     wraps: true,
     texts: (r) => [formatWords(r.antonyms)],
   },
-  { key: 'source', label: '출처', fixed: 58 },
+  // 지문 번호는 `3` 처럼 짧기도, `Week9-10` 처럼 길기도 하다. 고정 폭이면 긴 번호가 문장 칸을 덮는다
+  {
+    key: 'source',
+    label: '출처',
+    font: 'cell',
+    min: 58,
+    max: 130,
+    texts: (r) => [String(r.passageLabel ?? r.passageNo ?? '')],
+  },
   // 남는 폭을 받는 칸. 화면이 좁으면 먼저 min 까지 줄고, 그래도 넘치면 꺾여도 되는 칸이 준다.
   // 그래도 넘치면 마지막으로 floor 까지 더 준다 — 짧은 낱말로 된 문장이라 좁아도 읽힌다
   { key: 'sentence', label: '출처 문장', min: 280, floor: 200 },

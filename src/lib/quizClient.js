@@ -9,12 +9,15 @@
  */
 
 import { inflectionKey } from './duplicates.js'
+import { apiBase } from './aiClient.js'
 import { countWords, shuffleChoices } from './quizBuild.js'
+import { isBeyondExamDistractor, storyPatternIssues, uniqueHint, STORY_OPENINGS, STORY_ENDINGS } from './quizRules.js'
 
-const QUIZ_PARTS = ['II', 'III', 'V', 'VI']
+export const QUIZ_PARTS = ['II', 'III', 'V', 'VI']
 
 async function post(body) {
-  const res = await fetch('/api/ai/quiz', {
+  // 브라우저는 같은 출처, node 점검 도구는 VOCA_API_BASE (aiClient 와 같은 규칙)
+  const res = await fetch(`${apiBase()}/api/ai/quiz`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -44,8 +47,35 @@ export function buildPayloads(parts, startNo = 31) {
     V: {
       items: parts.V.map((r) => ({ ...basic(r), synonyms: words(r.synonyms), antonyms: words(r.antonyms) })),
     },
-    VI: { items: parts.VI.map(basic), startNo },
+    VI: {
+      items: parts.VI.map(basic),
+      startNo,
+      // 이야기의 도입 · 마무리 틀을 매번 다르게 고른다 (Week 07~09 가 모두 같은 틀이었다)
+      opening: Math.floor(Math.random() * STORY_OPENINGS.length),
+      ending: Math.floor(Math.random() * STORY_ENDINGS.length),
+    },
   }
+}
+
+/**
+ * PART III 유의어 · 반의어 문항의 첫 글자 힌트를 정답 하나로 좁혀지게 늘린다.
+ * 같은 관계가 되는 다른 말은 AI 가 rivals 에 적은 것과 단어장의 같은 칸 후보를 합쳐 본다.
+ * 받은 결과를 고쳐 쓴다 — 화면과 docx 가 같은 힌트를 쓰도록.
+ */
+export function resolveHints(result, payload) {
+  const candidates = new Map()
+  for (const it of payload?.synonym || []) candidates.set(String(it.id), it.synonyms || [])
+  for (const it of payload?.antonym || []) candidates.set(String(it.id), it.antonyms || [])
+  for (const it of result?.items || []) {
+    if (it.kind !== 'synonym' && it.kind !== 'antonym') continue
+    const rivals = [...(Array.isArray(it.rivals) ? it.rivals : []), ...(candidates.get(String(it.id)) || [])]
+    const { hint, clash, unique } = uniqueHint(it.answer, rivals)
+    if (!hint) continue
+    it.hint = hint
+    it.hintClash = clash
+    it.hintUnique = unique
+  }
+  return result
 }
 
 /* ------------------------------------------------------------------ */
@@ -137,8 +167,12 @@ function checkIII(result) {
       if (it.hint) issues.push(`${it.headword} — 파생어 문항에는 첫 글자를 주지 않는다`)
     } else if (!it.hint) {
       issues.push(`${it.headword} — 첫 글자 힌트가 없음`)
-    } else if (String(it.answer || '').toLowerCase()[0] !== String(it.hint).toLowerCase()[0]) {
-      issues.push(`${it.headword} — 힌트(${it.hint})가 정답(${it.answer})의 첫 글자와 다름`)
+    } else if (!String(it.answer || '').toLowerCase().startsWith(String(it.hint).toLowerCase())) {
+      issues.push(`${it.headword} — 힌트(${it.hint})가 정답(${it.answer})의 앞부분과 다름`)
+    } else if (it.hintUnique === false) {
+      issues.push(`${it.headword} — 힌트를 늘려도 ${it.hintClash.join(', ')} 와(과) 갈리지 않음 (다른 정답으로 다시 만들 것)`)
+    } else if (it.hint.length * 2 > String(it.answer).length) {
+      issues.push(`${it.headword} — ${it.hintClash.join(', ')} 와(과) 갈리려면 힌트가 ${it.hint}___ 까지 길어짐`)
     }
   }
   return issues
@@ -161,6 +195,20 @@ function checkV(result) {
     if (answers.some((n2) => n2 < 1 || n2 > 5)) issues.push('정답 번호가 1~5 범위를 벗어남')
     if ((it.clues || []).length < 2) issues.push(`문맥 단서가 ${(it.clues || []).length}개 (2개 이상 필요)`)
     counts.push(answers.length)
+
+    // 선택지는 고3(수능) 수준까지 — 수능 범위를 넘는 드문 말로 짚어 둔 오답이 다시 나왔는지
+    const wrong = (it.choices || []).filter((_, k) => !answers.includes(k + 1))
+    const rare = wrong.filter(isBeyondExamDistractor)
+    if (rare.length) issues.push(`오답 ${rare.join(', ')} — 수능 범위를 넘는 드문 말`)
+
+    // 오답이 모두 반대 뜻이면 뜻의 방향만 보고 풀린다
+    const roles = Array.isArray(it.roles) ? it.roles : []
+    if (roles.length === 5) {
+      const mismatch = roles.some((r, k) => (r === '정답') !== answers.includes(k + 1))
+      if (mismatch) issues.push(`${(it.choices || []).join('/')} — 정답 번호와 선택지 표시(roles)가 어긋남`)
+      const opposite = roles.filter((r) => r === '반대').length
+      if (opposite > 2) issues.push(`오답 ${opposite}개가 반대 뜻 (많아야 2개)`)
+    }
   }
 
   if (counts.length && new Set(counts).size < 2) {
@@ -180,6 +228,8 @@ function checkVI(result, payload) {
 
   const blanks = result?.blanks || []
   if (blanks.length !== payload.items.length) issues.push(`정답이 ${blanks.length}개`)
+
+  issues.push(...storyPatternIssues(story))
 
   // 빈칸이 한곳에 몰리지 않아야 한다
   const positions = marks.map((m) => story.indexOf(m))
@@ -227,20 +277,29 @@ function crossCheck(byPart) {
 /**
  * 네 PART 를 동시에 만든다.
  * 하나가 실패해도 나머지는 살린다 — 다시 만들 때 성공한 것까지 버릴 이유가 없다.
+ *
+ * only 를 주면 그 PART 만 다시 만들고 나머지는 previous(지난 결과) 그대로 둔다.
+ * 검사에 걸린 PART 하나 때문에 멀쩡한 셋까지 버리지 않게 한다.
  */
-export async function generateQuizParts({ parts, model, effort, startNo = 31, onProgress, signal }) {
-  const payloads = buildPayloads(parts, startNo)
-  const byPart = {}
+export async function generateQuizParts({ parts, model, effort, startNo = 31, onProgress, signal, only, previous }) {
+  const targets = only?.length ? QUIZ_PARTS.filter((p) => only.includes(p)) : QUIZ_PARTS
+  const fresh = buildPayloads(parts, startNo)
+  // 다시 만들지 않는 PART 는 지난 재료를 그대로 둔다 (VI 의 도입 · 마무리 틀도)
+  const payloads = previous?.payloads
+    ? Object.fromEntries(QUIZ_PARTS.map((p) => [p, targets.includes(p) ? fresh[p] : previous.payloads[p] || fresh[p]]))
+    : fresh
+  const byPart = previous && only?.length ? { ...previous.byPart } : {}
   let done = 0
 
-  const report = () => onProgress?.({ done, total: QUIZ_PARTS.length })
+  const report = () => onProgress?.({ done, total: targets.length })
   report()
 
   await Promise.all(
-    QUIZ_PARTS.map(async (part) => {
+    targets.map(async (part) => {
       if (signal?.aborted) return
       try {
         const { result, usage, durationMs } = await post({ part, payload: payloads[part], model, effort })
+        if (part === 'III') resolveHints(result, payloads.III)
         byPart[part] = {
           result,
           usage,
