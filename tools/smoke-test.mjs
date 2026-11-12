@@ -335,6 +335,13 @@ const edited = await reload(w1)
 check('고친 칸을 읽는다', edited.rows[2].meaning === '발생하다', edited.rows[2].meaning)
 check('고친 줄 1개', diffOf(edited) === '{"changed":1,"added":0,"removed":0}', diffOf(edited))
 
+// 출처 칸 이름을 바꿨다 (Week10 검수: Week10-1 → W10-1) — 보이는 이름을 따르고, 어느 지문인지(passageNo)는 그대로
+const w1s = buildWorkbook(editRows.map((r) => ({ ...r, passageLabel: 'Week10-1' })), { title: '출처 고침', passages: samplePassages })
+cellAt(w1s, 3, 'source').value = 'W10-1'
+const relabeled = await reload(w1s)
+check('고친 출처 이름을 따른다', relabeled.rows[0].passageLabel === 'W10-1' && relabeled.rows[0].passageNo === 1,
+  JSON.stringify([relabeled.rows[0].passageLabel, relabeled.rows[0].passageNo]))
+
 // 첫 줄을 지우고 번호를 1부터 다시 매겼다 — 번호 1 의 _meta 는 지운 줄(immersed)의 것이고,
 // 그 surface 는 새 1번 줄의 문장에도 들어 있다. 번호만 믿으면 정답이 immersed 로 바뀐다.
 const w2 = exported()
@@ -701,6 +708,32 @@ const ivNext = renderIV({ passageNo: 9, sentence: 'They miss the chance to refle
 check('PART IV — 뒤 문장을 붙여도 요약문은 붙지 않는다', !/\([AB]\)/.test(ivNext.text) && ivNext.atEnd, ivNext.text)
 const ivLabel = renderIV({ passageNo: 1, sentence: 'So, living in groups offered advantages.', answer: 'offered', before: 0, after: 0 }, [{ no: 1, english: '(A) So, living in groups offered advantages. (B) This is best seen in markets.' }])
 check('PART IV — 옛 지문의 단락 이름표를 찍지 않는다', !ivLabel.text.startsWith('('), ivLabel.text)
+
+// 어법 · 어휘 문항 지문에는 일부러 틀린 말이 있다. 엑셀에서 출처 문장을 바로잡으면 PART IV 도 고친 문장을 써야 한다
+// (11/12 완성반 Week03 24번이 지문 원문 "expends more energy" 로 실렸다)
+const errS = [
+  'Each group learns to tune into a niche of its own.',
+  'Listeners tune into recognizable sounds, so the listener expends more energy.',
+  'Other species do not ignore the energy they spend.',
+  'That is why quiet places matter.',
+]
+const errPassage = { no: 10, english: errS.join(' ') }
+const fixedRows = [
+  { id: 'e1', passageNo: 10, surface: 'expends', sentence: errS[1].replace('more', 'less') },
+  { id: 'e3', passageNo: 10, surface: 'species', sentence: errS[2].replace('ignore', 'waste') },
+  { id: 'e4', passageNo: 10, surface: 'tune into', sentence: errS[1] }, // 같은 문장인데 이 줄은 안 고쳤다
+]
+const ivItem = (row, ctx = {}) => ({ rowId: row.id, passageNo: row.passageNo, sentence: row.sentence, answer: row.surface, before: 0, after: 0, ...ctx })
+const ivOwn = renderIV(ivItem(fixedRows[0]), [errPassage], fixedRows)
+check('PART IV — 표에서 고친 출처 문장을 쓴다', ivOwn.text === 'Listeners tune into recognizable sounds, so the listener _______________ less energy.', ivOwn.text)
+const ivCtx = renderIV(ivItem(fixedRows[0], { after: 1 }), [errPassage], fixedRows)
+check('PART IV — 붙이는 뒤 문장도 다른 줄에서 고친 대로', ivCtx.text.includes('waste the energy') && !ivCtx.text.includes('ignore'), ivCtx.text)
+const ivShared = renderIV(ivItem(fixedRows[2]), [errPassage], fixedRows)
+check('PART IV — 같은 문장을 다른 줄이 고쳤으면 고친 문장, 앞 문장의 같은 말에 끌리지 않는다',
+  ivShared.text === 'Listeners _______________ recognizable sounds, so the listener expends less energy.', ivShared.text)
+const ivGlued = renderIV(ivItem({ id: 'g', passageNo: 10, surface: 'expends', sentence: `${errS[0]} ${errS[1]}` }), [errPassage])
+check('PART IV — 옛 분리 규칙으로 붙은 두 문장은 고친 문장으로 보지 않는다',
+  ivGlued.text === 'Listeners tune into recognizable sounds, so the listener _______________ more energy.', ivGlued.text)
 
 const blankVerb = { id: 'bv', headword: 'intensify', surface: 'intensifies', pos: '동', sentence: summary }
 const verbRows = ['adapt', 'blossom', 'carry', 'drift', 'evolve'].map((w, i) => ({ id: `v${i}`, headword: w, surface: w, pos: '동', sentence: `They ${w} slowly.` }))

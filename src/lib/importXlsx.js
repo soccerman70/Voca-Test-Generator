@@ -303,8 +303,10 @@ export function parseWorkbook(wb) {
       // 순서 배열 문항의 단락 이름표 "(A) …" 는 옛 파일에 남아 있을 수 있다 — 이름표일 뿐이라 걷는다
       sentence: stripParagraphLabel(v.sentence),
       surface,
+      // 어느 지문인지(passageNo)는 _meta 가 잇고, 보이는 이름은 출처 칸을 따른다 — 엑셀에서 "Week10-1" 을 "W10-1" 로
+      // 고쳤으면 시험지 · 정답해설에도 고친 이름이 찍혀야 한다. 출처 칸이 비었거나 날짜로 바뀌었으면 _meta 를 쓴다
       passageNo,
-      passageLabel: String(m?.passageLabel || '').trim() || v.source,
+      passageLabel: v.source || String(m?.passageLabel || '').trim(),
       properNoun: toBool(m?.properNoun),
       normalizationNote: String(m?.normalizationNote || '').trim(),
       missing: toBool(m?.missing),

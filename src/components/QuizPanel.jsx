@@ -165,7 +165,7 @@ function QuizBody({ quiz }) {
     partI,
     partIV,
     partIVTexts: partIV.items.map(
-      (it) => renderPartIVItem({ ...it, ...(context[it.rowId] || {}) }, passages).text
+      (it) => renderPartIVItem({ ...it, ...(context[it.rowId] || {}) }, passages, rows).text
     ),
     gen,
   })
@@ -403,6 +403,7 @@ function QuizBody({ quiz }) {
                 key={it.rowId}
                 item={{ ...it, ...(context[it.rowId] || {}) }}
                 passages={passages}
+                rows={rows}
                 onAdjust={adjust}
               />
             ))}
@@ -731,9 +732,12 @@ function PartBody({ partKey, result, choices }) {
   )
 }
 
-/** 문항 하나. 앞뒤 문장을 붙이고 뗄 수 있고, 40단어를 넘으면 알려준다. */
-function PartFourItem({ item, passages, onAdjust }) {
-  const r = renderPartIVItem(item, passages)
+/**
+ * 문항 하나. 앞뒤 문장을 붙이고 뗄 수 있고, 40단어를 넘으면 알려준다.
+ * rows 를 함께 넘겨야 표(엑셀)에서 고친 출처 문장이 지문 원문 대신 실린다 — 내려받는 문서(docData)와 같은 값을 쓴다.
+ */
+function PartFourItem({ item, passages, rows, onAdjust }) {
+  const r = renderPartIVItem(item, passages, rows)
   return (
     <div className={`quiz-item${r.overLimit ? ' over' : ''}`}>
       <div className="qi-head">
