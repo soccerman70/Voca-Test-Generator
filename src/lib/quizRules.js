@@ -63,6 +63,15 @@ export const STORY_ENDINGS = [
   '처음 장면과 이어지는 마지막 장면 묘사로 끝낸다',
 ]
 
+/**
+ * 빈칸 바로 앞의 관사를 a(n) 으로 바꾼다. "a ___" 는 모음으로 시작하는 보기를 후보에서 빼 버린다
+ * (Week 03 검수 35번: "Mina noticed a ___" 라 authenticity 가 빠졌다. Week 01 은 a(n) 이었다).
+ * PART VI 의 `{35}` 표시와 PART V 의 밑줄 빈칸을 모두 받는다. 이미 a(n) 이면 그대로 둔다. 대문자는 살린다(An → A(n)).
+ */
+export function neutralArticles(text) {
+  return String(text ?? '').replace(/\b(an?)(\s+)(?=\{\d+\}|_{3,})/gi, (_, art, space) => `${art[0]}(n)${space}`)
+}
+
 /** "Elena Ruiz spent thirty years as a child psychologist in …" 같은 소개 틀 */
 const INTRO_TEMPLATE = /\b(?:had\s+)?spent\s+(?:[\w-]+\s+){0,3}years?\s+(?:working\s+)?as\s+an?\b/i
 
@@ -90,27 +99,45 @@ export function storyPatternIssues(story) {
 }
 
 /**
- * PART III 첫 글자 힌트를 정답 하나로 좁혀지게 늘린다.
- * stretch : s___ 는 shrink 도 shorten 도 되므로 shr___ 까지 보여준다 (Week 09 검수 19 · 20번).
+ * PART III 힌트는 두 글자까지만 보여준다 — 사용자 결정 (Week 03 검수 20번).
+ * 예전에는 정답 하나로 좁혀질 때까지 늘렸는데(Week 09 검수 뒤), subsequent 의 반의어가 prev___ 로 네 글자나 드러났다.
+ */
+export const HINT_MAX = 2
+
+/**
+ * PART III 유의어 · 반의어 문항의 첫 글자 힌트와, 그 힌트로 인정할 정답들.
  *
- * @param {string} answer 정답
+ * 같은 관계가 되는 다른 말(rivals)과 첫 글자가 겹치면 갈릴 때까지 늘리되 HINT_MAX 글자에서 멈춘다.
+ * 거기서도 겹치는 말은 **함께 정답으로 인정**한다 — subsequent 의 반의어 pr___ 는 previous · prior · preceding 모두 정답.
+ * 정답이 다른 말의 앞부분이어도(common / commonplace) 같은 방식이다.
+ *
+ * @param {string} answer AI 가 고른 정답
  * @param {string[]} rivals 같은 관계가 되는 다른 말 (AI 가 적은 것 + 단어장 후보)
- * @returns {{hint: string, clash: string[], unique: boolean}} 힌트, 겹쳐서 늘리게 만든 말, 끝내 갈렸는지
+ * @returns {{hint: string, accepted: string[], clash: string[]}}
+ *   accepted — 인정하는 정답 (AI 정답이 맨 앞). clash — 한 글자로는 겹쳐서 힌트를 늘리게 만든 말
  */
 export function uniqueHint(answer, rivals) {
   const a = String(answer || '').trim()
+  if (!a) return { hint: '', accepted: [], clash: [] }
   const lower = a.toLowerCase()
-  const others = [...new Set((rivals || []).map((r) => String(r || '').trim().toLowerCase()))].filter(
-    (r) => r && r !== lower && r[0] === lower[0]
+  const others = [...new Set((rivals || []).map((r) => String(r || '').trim()).filter(Boolean))].filter(
+    (r) => r.toLowerCase() !== lower && r[0].toLowerCase() === lower[0]
   )
-  if (!a) return { hint: '', clash: [], unique: true }
-  for (let n = 1; n <= a.length; n += 1) {
-    if (!others.some((r) => r.startsWith(lower.slice(0, n)))) {
-      // 한 글자로 모자라 늘렸다면, 바로 앞 길이에서 겹친 말이 늘리게 만든 말이다
-      const clash = n > 1 ? others.filter((r) => r.startsWith(lower.slice(0, n - 1))) : []
-      return { hint: a.slice(0, n), clash, unique: true }
-    }
+  const sharing = (n) => others.filter((r) => r.toLowerCase().startsWith(lower.slice(0, n)))
+
+  let n = 1
+  while (n < Math.min(HINT_MAX, a.length) && sharing(n).length) n += 1
+  return {
+    hint: a.slice(0, n),
+    accepted: [a, ...sharing(n)],
+    clash: n > 1 ? sharing(n - 1) : [],
   }
-  // 정답이 다른 말의 앞부분이면(common / commonplace) 글자를 늘려도 갈리지 않는다
-  return { hint: a.slice(0, 1), clash: others, unique: false }
+}
+
+/**
+ * PART III 문항에서 인정하는 정답. 힌트로 여러 말이 인정되면 모두다 — `previous · prior · preceding`.
+ * 예전 결과(accepted 없음)는 AI 정답 하나다.
+ */
+export function partThreeAnswers(it) {
+  return Array.isArray(it?.accepted) && it.accepted.length ? it.accepted : [it?.answer].filter(Boolean)
 }

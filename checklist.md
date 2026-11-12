@@ -912,3 +912,50 @@ Week 08 단어장(80개)을 검수하니 파생어 · 유의어 · 반의어 · 
 - [ ] 표제어를 뽑지 않은 지문 문장에 남은 틀린 말은 고칠 길이 없다 — 앞뒤 문장을 붙일 때 그런 문장이 들어가면 손으로 고쳐야 한다
 - [ ] 엑셀에서 표제어를 바꾸면 PART IV 정답 형태(surface)는 _meta 의 옛 값이 남을 수 있다(옛 형태가 문장에 아직 있을 때).
       검수본 10쌍에서 표제어를 바꾼 줄은 0 이라 미룸. 생기면 _meta 에 표제어를 담아 견준다
+
+---
+
+# 시험지 검수(Week 03) 반영 — 힌트 두 글자 · PART I 다른 낱말 · a(n) · 정답해설 머리 · 정답 노출 (2026-11-12)
+
+검수 지적(완성반 Week 03):
+- 20번 힌트 `prev` — 네 글자가 드러났다. 줄이면 단어장 반의어 prior · preceding 도 답이 된다 → `pr` 로 하고 셋 다 인정 (**이 방식으로 확정**)
+- PART I 7번 "다르게" — 학생은 differently 를 쓴다(정답해설 유의어 칸에도 있다). 뜻을 "차등적으로", 단어장은 "차등적으로, 다르게" 로
+- PART I 5번 "정서적인" — emotional 과 겹친다. 7번만큼 흔하지 않으니 그대로 두고 채점 기준만 정한다
+- 35번 `a ___` — 관사 때문에 authenticity 가 빠진다. Week 01 처럼 a(n)
+- 정답해설 머리에 연도 · 반 · 주차가 없다 (시험지 머리는 Week 03 으로 제대로 나왔다)
+- PART IV 문장에 다른 문항의 정답이 드러난 것 3건 — 23 value proposition · 24 niche · 25 concept creep (모두 PART I 정답)
+
+## 결정 사항
+
+- PART III 힌트는 두 글자까지(`HINT_MAX`). 그 두 글자로 시작하는 같은 관계의 말(rivals + 단어장 같은 칸)은 모두 정답(`accepted`).
+  Week 09 뒤의 "갈릴 때까지 늘린다" 를 이것으로 바꿨다
+- PART I 은 AI 가 점검한다(PART V 복수 정답 점검과 같은 자리) — 정답을 알려 주고 "정답 말고 쓸 만한 말" 과 좁힌 뜻을 받는다.
+  흔한 말(likely)이면 좁힌 뜻을 제안하고 한 번에 바꾼다. 바꾼 뜻은 그 시험지에만(`quiz.meanings`) — 단어장 표를 고치면 시험지가 지워진다.
+  들어맞기만 하면 채점 기준. 둘 다 정답해설 PART I 아래 "채점 참고"
+- 단어장 생성의 뜻 규칙에 예외 — 더 쉬운 흔한 말과 뜻이 똑같아지면 표제어만의 결을 앞에 둔다("차등적으로, 다르게")
+- 빈칸 바로 앞 관사는 a(n) — PART VI 와 PART V. 받은 뒤 코드가 바꾼다
+- 정답해설 머리는 시험지 머리와 같은 값, 비운 칸은 뺀다
+- 정답 노출 — 배정에서 PART IV 문장에 나오는 말은 PART I 에서 뒤로 미루고, PART IV 끼리 서로의 정답 형태를 보여주는 동사는 고르지 않는다.
+  III 재료에는 PART IV 문장에 나오는 후보를, V · VI 재료에는 PART I 정답을 "쓰지 말 것" 으로 싣는다. 남은 것은 화면에서 짚는다
+- 그 전에 만든 시험지도 내려받으면 새 규칙(두 글자 힌트 · 인정 정답 · a(n) · 머리)이 입혀진다(`withCurrentRules`) — 다시 만들 필요 없음
+
+## 작업
+
+- [x] `quizRules.js` — `HINT_MAX` · `uniqueHint`(accepted) · `partThreeAnswers` · `neutralArticles`
+- [x] `duplicates.js` — `findInflected` · `findWholeWord` · `silentEKey` 를 `importXlsx.js` 에서 옮김(엑셀 모듈 없이 쓰려고). `recoverSurface` 는 그대로 부른다
+- [x] `quizAllocate.js` — `mentions`, PART IV 정답 형태 겹침 건너뛰기, PART I 은 PART IV 문장에 나오는 말을 뒤로
+- [x] `quizClient.js` — `QUIZ_PARTS` 에 I(점검), `buildPayloads(parts, startNo, meanings)` 에 I 재료 · avoid, V · VI 받은 뒤 a(n),
+      `partOneNotes` · `answerExposures` · `withCurrentRules`, 옛 "힌트를 늘려도 갈리지 않음" 검사 대신 "세 글자 이상" 검사
+- [x] `server/quizPrompts.js` · `claudeBridge.js` — `buildPartICheckPrompt`(라우트 part `I`), III 힌트 설명 · 고르지 말 후보, V · VI a(n) · 쓰지 말 낱말
+- [x] `server/prompts.js` — 뜻 규칙 예외("차등적으로, 다르게")
+- [x] `quizBuild.js` — `buildPartI(rows, startNo, meanings)`
+- [x] `exportDocx.js` — `answerHeadText` · `headFields`, 정답해설 PART I 채점 참고, PART III 인정 정답 `(모두 정답)`
+- [x] `QuizPanel.jsx` — 규칙을 입힌 결과로 화면 · 문서, PART I 점검 칸(뜻 바꾸기 · 되돌리기 · PART I 점검), PART IV 정답 노출 알림 · 문항별 경고,
+      PART III 인정 정답 표시
+- [x] 스모크 테스트 [19] — a(n) · 정답해설 머리 · 배정(노출 · 형태 겹침) · 정답 노출 · 재료 avoid · PART I 점검 · 옛 시험지. [18] 힌트 테스트는 새 규칙으로 바꿈
+- [x] Week 03 검수본으로 재현 — PART IV 다섯 문항은 그대로, PART I 에서 value proposition · niche · concept creep 이 빠지고 노출 0건.
+      옛 결과를 꾸며 만든 docx — 머리 "2027 겨울학기 단어학습 완성반 Week 03 — 정답 및 해설", 20번 `pr___` · "previous · prior (모두 정답)",
+      35번 "a(n)", 채점 참고 두 줄
+- [x] lint · 빌드 · 스모크 테스트 통과
+- [ ] 화면에서 실제로 문항을 만들어 PART I 점검 칸 · 정답 노출 알림 확인
+- [ ] PART I 점검도 AI 판단이다 — 놓치거나 지나치게 짚을 수 있다. 다음 검수에서 짚은 문항과 검수 지적을 견준다

@@ -12,6 +12,7 @@ import { spawn } from 'node:child_process'
 import { DEFAULT_MODEL, DEFAULT_EFFORT, isKnownModel, isKnownEffort } from '../src/lib/models.js'
 import { buildSelectPrompt, buildEnrichPrompt } from './prompts.js'
 import {
+  buildPartICheckPrompt,
   buildPartIIPrompt,
   buildPartIIIPrompt,
   buildPartVPrompt,
@@ -225,12 +226,13 @@ const routes = {
   },
 
   /**
-   * 시험지 한 PART 생성. II·III·V·VI 만 AI 가 필요하다.
-   * PART 마다 따로 부르는 것은 넷을 동시에 돌리기 위해서다.
+   * 시험지 한 PART 생성. II·III·V·VI 는 AI 가 만들고, I 은 다른 낱말로 읽힐 여지만 점검한다.
+   * PART 마다 따로 부르는 것은 다섯을 동시에 돌리기 위해서다.
    */
   async quiz(body) {
     const { part, payload, model, effort } = body
     const build = {
+      I: buildPartICheckPrompt,
       II: buildPartIIPrompt,
       III: buildPartIIIPrompt,
       V: buildPartVPrompt,

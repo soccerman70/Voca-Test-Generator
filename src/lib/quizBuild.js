@@ -41,17 +41,21 @@ export function blankOut(sentence, surface) {
 /**
  * PART I — 우리말 → 영어 쓰기 (10문항)
  * 어구는 낱말 수를 괄호로 알려준다: `~을 대신하여 (3)`
+ *
+ * @param {object} [meanings] 시험지에서 좁혀 바꾼 뜻 { [rowId]: '차등적으로' }. 단어장 뜻이 더 흔한 말(differently)에도
+ *   들어맞을 때 PART I 점검이 제안하고 사람이 고른다. 단어장 표는 그대로다.
  */
-export function buildPartI(rows, startNo = 1) {
+export function buildPartI(rows, startNo = 1, meanings = {}) {
   return rows.map((row, i) => {
     const words = String(row.headword || '').trim().split(/\s+/).filter(Boolean).length
+    const meaning = String(meanings?.[row.id] || '').trim() || row.meaning
     return {
       no: startNo + i,
       rowId: row.id,
-      prompt: words >= 2 ? `${row.meaning} (${words})` : row.meaning,
+      prompt: words >= 2 ? `${meaning} (${words})` : meaning,
       answer: row.headword,
       pos: row.pos,
-      meaning: row.meaning,
+      meaning,
       synonyms: (row.synonyms || []).map((s) => s.word).join(', '),
       passageNo: row.passageNo,
       passageLabel: row.passageLabel,

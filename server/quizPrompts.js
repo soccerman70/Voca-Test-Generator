@@ -1,6 +1,6 @@
 /**
- * 시험지 PART II · III · V · VI 프롬프트.
- * PART I 과 IV 는 단어장에 있는 것만으로 조립되므로 AI 를 부르지 않는다.
+ * 시험지 PART II · III · V · VI 프롬프트와 PART I · V 점검 프롬프트.
+ * PART I 과 IV 는 단어장에 있는 것만으로 조립된다. PART I 은 다른 낱말로 읽힐 여지만 AI 가 점검한다.
  *
  * 네 PART 는 서로 의존이 없어 동시에 호출한다.
  * 규칙은 지시로 걸되, 어긴 것은 받은 뒤 코드로 걸러낸다 (개수 보장을 코드로 하는 것과 같은 방식).
@@ -16,6 +16,64 @@ import {
 
 const COMMON = `너는 한국 고등학생 대상 수능 영어 어휘 심화 시험지를 만드는 출제자다.
 문항은 실제 학평 수준이어야 하고, 학생이 어림짐작으로 맞힐 수 있으면 안 된다.`
+
+/**
+ * 같은 시험지의 PART I 정답 — 학생이 우리말을 보고 써야 하는 말이라, 다른 문항 글에 나오면 답이 드러난다
+ * (Week 03 검수: PART IV 문장에 PART I 정답 niche · concept creep 이 그대로 나왔다).
+ */
+const avoidBlock = (avoid) =>
+  Array.isArray(avoid) && avoid.length
+    ? `\n\n## 글에 쓰지 말 낱말\n다음은 같은 시험지의 다른 문항 정답이다. 문장 · 글에 쓰지 마라(형태를 바꿔도 안 된다): ${avoid.join(', ')}`
+    : ''
+
+/* ------------------------------------------------------------------ */
+/* PART I 점검 — 다른 낱말로 읽힐 여지                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * PART I 은 우리말 뜻을 보고 영어를 쓰는 문항이다. 뜻이 더 흔한 말에도 그대로 들어맞으면 학생은 그 말을 쓴다
+ * (Week 03 검수 7번: "다르게" 는 differentially 보다 differently 로 쓴다 — 단어장 유의어이기도 했다).
+ * 정답을 알려 주고, 정답 말고 쓸 만한 말과 좁힌 뜻을 받는다.
+ * @param {{items: Array<{id, no, prompt, answer, pos, synonyms}>}} payload
+ */
+export function buildPartICheckPrompt({ items }) {
+  const body = items
+    .map((it) => `${it.no}. id=${it.id}  우리말: ${it.prompt}  → 정답 ${it.answer} (${it.pos})${it.synonyms ? `  · 단어장 유의어: ${it.synonyms}` : ''}`)
+    .join('\n')
+
+  return `${JSON_ONLY}
+
+너는 수능 영어 단어 시험을 검토하는 꼼꼼한 교사다. 아래는 "우리말에 해당하는 영어 단어 또는 어구를 쓰시오" 문항이다.
+학생은 단어장으로 공부했고, 시험지에서는 우리말 뜻(괄호 숫자는 어구의 낱말 수)만 보고 영어를 쓴다.
+
+각 문항에서 **학생이 정답 대신 써 낼 만하고, 채점할 때 틀렸다고 하기 어려운 다른 영어 낱말 · 어구**만 찾아 others 에 적어라.
+- 그 우리말을 영어로 옮길 때 **정답만큼, 또는 정답보다 먼저** 떠오르고 뜻도 그대로 들어맞는 말이어야 한다.
+  뜻이 비슷한 말을 모으는 것이 아니다. 단어장 유의어라고 다 적지 마라 — 그 우리말과 결이 다르면 채점에서 틀렸다고 할 수 있다.
+- 적지 말 것: 정답의 굴절형 · 철자 변이, 우리말을 낱말마다 옮긴 말("개념 확장" → concept expansion), 더 넓거나 좁은 말,
+  괄호의 낱말 수와 낱말 수가 다른 말("자신을 돋보이게 하다 (3)" → stand out 은 두 낱말).
+- 대부분의 문항은 others 가 빈 배열이다. 10문항이면 걸리는 것은 보통 한두 개다.
+- 찾은 말마다 likely 를 적는다.
+  - true — 정답보다 흔하거나 쉬워 학생이 먼저 떠올려 쓸 말. (예: "다르게" → differently. differentially 보다 훨씬 먼저 쓴다)
+  - false — 들어맞기는 하지만 그 정도로 먼저 떠오르지는 않는 말. 채점 기준만 정해 두면 된다. (예: "정서적인" → emotional)
+- likely 가 true 인 말이 있으면, **정답만 가리키는 좁힌 우리말 뜻**을 prompt 에 적는다. 표제어만의 결을 살린다
+  (differentially → "차등적으로"). 품사 어미는 원래 뜻과 같게 쓰고, 괄호 낱말 수는 적지 마라.
+  - 좁힌 뜻을 보고도 그 다른 말을 그대로 쓸 수 있으면 좁힌 것이 아니다 — 꾸밈말만 덧붙인 뜻("앞날의 가망" → 여전히 chance)은 쓰지 마라.
+    그렇게밖에 못 좁히면 빈 문자열로 두고 채점 기준으로 넘긴다.
+  - likely 가 true 인 말이 없으면 빈 문자열이다.
+- 다른 말이 없으면 others 는 빈 배열이다. 억지로 찾지 마라.
+
+## 문항
+${body}
+
+## 출력 형식
+{
+  "items": [
+    { "id": "입력의 id 그대로", "others": [ { "word": "differently", "likely": true, "why": "왜 그렇게 쓰는지 30자 이내 한국어" } ], "prompt": "차등적으로" }
+  ]
+}
+
+items 는 입력 ${items.length}개 전부를 순서대로 포함해야 한다.`
+}
 
 /* ------------------------------------------------------------------ */
 /* PART II — 영영풀이 매칭                                             */
@@ -67,7 +125,10 @@ definitions 는 입력 ${items.length}개 전부를 입력 순서대로 포함�
 /* ------------------------------------------------------------------ */
 
 export function buildPartIIIPrompt({ derivative, synonym, antonym }) {
-  const line = (it, extra) => `id=${it.id}  ${it.headword} (${it.pos}) — 뜻: ${it.meaning}${extra}`
+  // avoid — 후보 가운데 PART IV 문장에 나오는 말. 정답으로 고르면 PART IV 가 답을 보여준다
+  const line = (it, extra) =>
+    `id=${it.id}  ${it.headword} (${it.pos}) — 뜻: ${it.meaning}${extra}` +
+    (it.avoid?.length ? ` — 정답으로 고르지 말 것: ${it.avoid.join(', ')} (같은 시험지 PART IV 문장에 나옴)` : '')
 
   return `${JSON_ONLY}
 
@@ -103,12 +164,14 @@ ${COMMON}
 - 정답과 **같은 첫 글자로 시작하면서 같은 관계가 되는 다른 흔한 말**이 있으면 학생이 그 말을 써도 틀렸다고 할 수 없다.
   (stretch 의 반의어 s___ → shrink 도 shorten 도 맞다 · respective 의 반의어 c___ → common 도 collective 도 맞다)
 - 그래서 후보 가운데 **그런 말이 없는 것을 정답으로 우선 고른다.**
-- 어느 후보를 골라도 그런 말이 있으면, 그 말들을 rivals 에 **빠짐없이** 적는다. 코드가 힌트 글자를 늘려
-  (shr___ · com___) 정답만 남게 한다. 그런 말이 없으면 rivals 는 빈 배열이다.
+- 어느 후보를 골라도 그런 말이 있으면, 그 말들을 rivals 에 **빠짐없이** 적는다. 코드가 힌트를 두 글자까지만 늘리고
+  (sh___ · pr___), 그 두 글자로 시작하는 rivals 는 **함께 정답으로 인정**한다(previous · prior · preceding).
+  힌트가 세 글자 이상 드러나면 문항이 너무 쉬워지기 때문이다. 그런 말이 없으면 rivals 는 빈 배열이다.
 
 ## 공통
 - 다섯 문항의 관계 유형(동사:명사 / 형용사:명사 / 동사:형용사 / 부사:부사 …)이 서로 겹치지 않게 흩어라.
 - 정답은 반드시 아래에 주어진 후보 안에서 고른다. 없는 말을 지어내지 마라.
+- "정답으로 고르지 말 것" 이 붙은 후보는 다른 후보가 있으면 고르지 마라.
 
 ## 파생어 문항 대상 (2개)
 ${derivative.map((it) => line(it, ` — 파생어 후보: ${it.derivatives.join(', ')}`)).join('\n')}
@@ -144,7 +207,7 @@ items 는 파생어 2개 · 유의어 1개 · 반의어 2개, 모두 5개여야 
 /* PART V — 복수 정답 유의어 변별                                       */
 /* ------------------------------------------------------------------ */
 
-export function buildPartVPrompt({ items }) {
+export function buildPartVPrompt({ items, avoid }) {
   const body = items
     .map(
       (it, i) =>
@@ -166,6 +229,7 @@ ${COMMON}
 - ${items.length}개 문항의 주제 영역이 서로 달라야 한다.
   (외교·정치 / 학술·연구 / 기술 / 사회학 / 윤리 / 문학 비평 등)
 - 빈칸은 \`_______________\` (밑줄 15개) 로 표시한다. 문장에 빈칸은 하나뿐이다.
+- 빈칸 바로 앞에 관사를 쓰면 **a(n)** 으로 적는다. a 나 an 으로 쓰면 첫소리가 다른 선택지가 바로 지워진다.
 - **문맥 단서를 2개 이상 심어라.** 정답 방향이 명확해 오답의 여지가 없어야 한다.
   - 부사 (deliberately, increasingly, spontaneously)
   - 결합 명사 (full-scale war, surface-level adjustments)
@@ -197,7 +261,7 @@ ${NEAR_DISTRACTOR_EXAMPLES.map((e) => `   - 정답 ${e.answer} 자리의 **${e.n
 - 정답과 오답을 섞어 배치한다. 정답이 특정 번호에 몰리지 않게 한다.
 
 ## 대상 표제어
-${body}
+${body}${avoidBlock(avoid)}
 
 ## 출력 형식
 {
@@ -268,7 +332,7 @@ items 는 입력 ${items.length}개 전부를 순서대로 포함해야 한다. 
  *   opening · ending 은 STORY_OPENINGS · STORY_ENDINGS 의 번호. 없으면 여기서 무작위로 고른다 —
  *   같은 틀을 매주 되풀이하지 않게 한다.
  */
-export function buildPartVIPrompt({ items, startNo = 31, opening, ending }) {
+export function buildPartVIPrompt({ items, startNo = 31, opening, ending, avoid }) {
   const pick = (list, i) => list[Number.isInteger(i) && i >= 0 && i < list.length ? i : Math.floor(Math.random() * list.length)]
   const openWith = pick(STORY_OPENINGS, opening)
   const endWith = pick(STORY_ENDINGS, ending)
@@ -304,10 +368,12 @@ ${COMMON}
 - 빈칸이 연달아 붙거나 한곳에 몰리지 않게 **고르게 흩어라.**
 - **주어진 단어를 변형 없이 원형 그대로** 넣을 수 있는 자리를 만들어라.
   (조동사 뒤 동사원형, to + 동사원형, 명사 자리, 형용사 자리, 부사 자리)
+- 빈칸 바로 앞에 관사를 쓰면 **a(n)** 으로 적는다 (\`a(n) {${numbers[0]}}\`). a 나 an 으로 쓰면 첫소리가 다른 보기가
+  후보에서 빠져 답이 드러난다.
 - 앞뒤 맥락만으로 어떤 단어가 들어갈지 추론할 수 있어야 한다.
 
 ## 넣을 단어
-${body}
+${body}${avoidBlock(avoid)}
 
 ## 출력 형식
 {

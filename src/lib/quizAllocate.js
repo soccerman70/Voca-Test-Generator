@@ -10,9 +10,19 @@
  * AI 를 부르지 않는다. 여기서 나온 숫자를 보고 각 PART 가 성립하는지 먼저 판단한다.
  */
 
-import { inflectionKey } from './duplicates.js'
+import { inflectionKey, findInflected, findWholeWord } from './duplicates.js'
 import { isPhrase } from './tokenize.js'
 import { hasQuestionBlank } from './passages.js'
+
+/**
+ * 그 표제어가 문장에 나오는지 — 굴절형까지(niche · niches), 불규칙형은 지문 형태(surface)로.
+ * PART IV 문장은 지문 원문 그대로 시험지에 실리므로, 거기 나오는 말을 학생이 써야 하는 정답으로 내면 답이 드러난다.
+ */
+export function mentions(sentence, row) {
+  const text = String(sentence || '')
+  if (!text) return false
+  return Boolean(findInflected(row.headword, text) || (row.surface && findWholeWord(text, row.surface)))
+}
 
 /** 배정 순서대로. need 는 그 PART 가 필요로 하는 표제어 수. */
 export const PARTS = [
@@ -55,8 +65,13 @@ export const FORM_LABEL = {
  *
  * 같은 표제어가 서로 다른 형태로 두 번 나올 수 있다(developed / developing).
  * 형태만 보고 뽑으면 둘 다 담기므로, 뽑는 순간에도 대장을 확인한다.
+ *
+ * 한 문장에서 동사를 둘 고르면 한 문항의 문장이 다른 문항의 정답 형태를 그대로 보여준다.
+ * 이미 뽑은 문항의 문장에 이 동사의 지문 형태가 있거나, 이 동사의 문장에 이미 뽑은 정답 형태가 있으면 건너뛴다.
  */
 function takeDiverseVerbs(candidates, need, ledger) {
+  const showsForm = (sentence, row) => Boolean(row.surface && findWholeWord(String(sentence || ''), row.surface))
+  const clashes = (row, picked) => picked.some((p) => showsForm(p.sentence, row) || showsForm(row.sentence, p))
   const byForm = new Map()
   for (const row of candidates) {
     const form = verbForm(row.surface, row.headword)
@@ -73,6 +88,7 @@ function takeDiverseVerbs(candidates, need, ledger) {
         const next = list.shift()
         const key = inflectionKey(next.headword)
         if (!key || ledger.has(key)) continue // 다른 형태로 이미 뽑힌 말
+        if (clashes(next, picked)) continue // 다른 문항 문장에 정답 형태가 드러난다
         ledger.add(key)
         picked.push(next)
         addedThisRound = true
@@ -165,10 +181,16 @@ export function allocate(rows, { seed } = {}) {
   // VI — 보기 낱말을 원형 그대로 넣으므로 어구는 뺀다
   parts.VI = take((r) => !isPhraseRow(r), 5)
 
-  // I — 어구를 먼저 담고 남은 자리는 아무 말로나 채운다
-  const phrases = take(isPhraseRow, 4)
-  const rest = take(() => true, 10 - phrases.length)
-  parts.I = [...phrases, ...rest]
+  // I — 어구를 먼저 담고 남은 자리는 아무 말로나 채운다.
+  // PART IV 문장에 나오는 말은 뒤로 미룬다 — 학생이 써야 하는 정답이 PART IV 문장에 그대로 보인다
+  // (Week 03 검수: PART IV 23 · 24 · 25번에 PART I 정답 value proposition · niche · concept creep).
+  // 그런 말을 빼고 10개를 못 채우면 그때 채운다 — 정답 노출 검사(answerExposures)가 짚는다
+  const ivSentences = parts.IV.map((r) => r.sentence)
+  const hidden = (r) => !ivSentences.some((s) => mentions(s, r))
+  const phrases = take((r) => isPhraseRow(r) && hidden(r), 4)
+  const rest = take(hidden, 10 - phrases.length)
+  const fill = take(() => true, 10 - phrases.length - rest.length)
+  parts.I = [...phrases, ...rest, ...fill]
 
   const got = { ...parts, III: parts.III.all }
   const shortages = PARTS.filter((p) => countOf(got[p.key]) < p.need).map((p) => ({

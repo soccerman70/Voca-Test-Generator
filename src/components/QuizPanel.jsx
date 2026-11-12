@@ -4,9 +4,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { useStore, DOC_TITLE_MAX } from '../store.js'
 import { allocate, verbForm, FORM_LABEL, PARTS, shortageAdvice } from '../lib/quizAllocate.js'
 import { buildPartI, buildPartIV, renderPartIVItem } from '../lib/quizBuild.js'
-import { generateQuizParts, answerCheckIssues } from '../lib/quizClient.js'
+import {
+  generateQuizParts,
+  answerCheckIssues,
+  withCurrentRules,
+  partOneNotes,
+  answerExposures,
+} from '../lib/quizClient.js'
 import { downloadTest, downloadAnswers, testHeadParts, wrongReasons } from '../lib/exportDocx.js'
 import { DEFAULT_TITLE } from '../lib/exportXlsx.js'
+import { partThreeAnswers } from '../lib/quizRules.js'
 
 let quizSeq = 0
 
@@ -25,7 +32,8 @@ function makeQuiz(rows, seed, no) {
     createdAt: Date.now(),
     ...allocationOf(rows, seed),
     context: {}, // 문항별 앞뒤 문장 수 { [rowId]: { before, after } }
-    gen: null, // AI 가 만든 PART II · III · V · VI
+    meanings: {}, // PART I 에서 좁혀 바꾼 뜻 { [rowId]: '차등적으로' } — 단어장 표는 그대로
+    gen: null, // AI 가 만든 PART II · III · V · VI 와 PART I 점검
   }
 }
 
@@ -102,7 +110,10 @@ function QuizBody({ quiz }) {
     setStep,
   } = useStore()
   const stats = useMemo(() => allocate(rows).stats, [rows])
-  const { parts, shortages, thirdDetail, ok, context, gen } = quiz
+  const { parts, shortages, thirdDetail, ok, context, gen: storedGen } = quiz
+  const meanings = useMemo(() => quiz.meanings || {}, [quiz.meanings])
+  // 화면과 내려받는 문서는 지금 규칙(PART III 두 글자 힌트 · 인정 정답, 빈칸 앞 a(n))을 입힌 것을 쓴다
+  const gen = useMemo(() => withCurrentRules(storedGen), [storedGen])
 
   // 못 채운 PART 마다 무엇이 모자라고 어떻게 채우는지. 화면은 처방(fix)을 모아 버튼을 고른다.
   const advice = useMemo(
@@ -119,8 +130,29 @@ function QuizBody({ quiz }) {
       return { context: { ...q.context, [rowId]: { ...cur, [side]: Math.max(0, Math.min(2, cur[side] + delta)) } } }
     })
 
-  const partI = useMemo(() => buildPartI(parts.I), [parts.I])
+  const partI = useMemo(() => buildPartI(parts.I, 1, meanings), [parts.I, meanings])
   const partIV = useMemo(() => buildPartIV(parts.IV), [parts.IV])
+  // 화면 문항과 내려받는 문서가 같은 글을 쓴다 — 앞뒤로 붙인 문장 · 표에서 고친 출처 문장까지
+  const partIVTexts = useMemo(
+    () => partIV.items.map((it) => renderPartIVItem({ ...it, ...(context[it.rowId] || {}) }, passages, rows).text),
+    [partIV, context, passages, rows]
+  )
+  // 정답 말고도 학생이 쓸 만한 말이 있는 PART I 문항 (PART I 점검)
+  const partINotes = useMemo(() => partOneNotes(gen?.byPart?.I?.result, partI, meanings), [gen, partI, meanings])
+  // 다른 문항의 정답이 문항 글에 드러나는 곳 — 앞뒤 문장을 붙일 때마다 다시 본다
+  const exposures = useMemo(
+    () => answerExposures({ partI, partIV, partIVTexts, gen }),
+    [partI, partIV, partIVTexts, gen]
+  )
+
+  /** PART I 뜻을 바꾸거나(text) 단어장 뜻으로 되돌린다(null) */
+  const setMeaning = (rowId, text) =>
+    updateQuiz(quiz.id, (q) => {
+      const next = { ...(q.meanings || {}) }
+      if (text) next[rowId] = text
+      else delete next[rowId]
+      return { meanings: next }
+    })
 
   // AI 가 만드는 PART II·III·V·VI. 결과와 진행률은 store 에 두어 화면을 떠났다 와도 남는다.
   const genProgress = quizBusy[quiz.id]
@@ -137,9 +169,10 @@ function QuizBody({ quiz }) {
         parts,
         model,
         effort,
+        meanings,
         onProgress: (p) => setQuizBusy(id, p),
         only: list,
-        previous: list ? gen : null,
+        previous: list ? storedGen : null,
       })
       updateQuiz(id, { gen: result })
     } catch (err) {
@@ -163,10 +196,9 @@ function QuizBody({ quiz }) {
     // 시험지가 여럿이면 내려받는 파일 이름이 겹치지 않게 번호를 붙인다
     fileNo: quizzes.length > 1 ? quiz.no : null,
     partI,
+    partINotes,
     partIV,
-    partIVTexts: partIV.items.map(
-      (it) => renderPartIVItem({ ...it, ...(context[it.rowId] || {}) }, passages, rows).text
-    ),
+    partIVTexts,
     gen,
   })
 
@@ -366,19 +398,31 @@ function QuizBody({ quiz }) {
           </div>
           <div style={{ padding: 16 }}>
             <p className="hint" style={{ margin: '0 0 10px' }}>
-              단어장에 있는 뜻과 표제어로 그대로 만들어집니다. 어구는 낱말 수를 괄호로 알려줍니다.
+              단어장에 있는 뜻과 표제어로 그대로 만들어집니다. 어구는 낱말 수를 괄호로 알려줍니다. PART IV 문장에 나오는
+              말은 되도록 넣지 않습니다(답이 보이므로).
             </p>
             <table className="quiz-preview">
               <tbody>
                 {partI.map((q) => (
                   <tr key={q.rowId}>
                     <td className="qn">{q.no}</td>
-                    <td>{q.prompt}</td>
+                    <td>
+                      {q.prompt}
+                      {meanings[q.rowId] && <span className="qa-note"> · 바꾼 뜻</span>}
+                    </td>
                     <td className="qa">{q.answer}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <PartOneChecks
+              data={gen?.byPart?.I}
+              hasGen={Boolean(gen)}
+              notes={partINotes}
+              busy={genBusy}
+              onCheck={() => runGenerate(['I'])}
+              onApply={setMeaning}
+            />
           </div>
         </div>
       )}
@@ -398,12 +442,22 @@ function QuizBody({ quiz }) {
               문장을 붙이세요. 유추가 가능하면 붙이지 않는 편이 낫고, 한 문항은 40단어를 넘지 않아야 합니다.
             </p>
 
+            {/* 학생이 써야 하는 다른 문항의 정답이 글에 그대로 보이는 곳 (Week 03 검수 23 · 24 · 25번) */}
+            {exposures.length > 0 && (
+              <div className="notice-box">
+                <strong>다른 문항의 정답이 글에 드러남 {exposures.length}건</strong> — {exposures.map((e) => e.text).join(' · ')}.
+                PART IV 문항이면 붙인 앞뒤 문장을 떼거나 <strong>배정 다시 하기</strong>로 바꾸고, PART V · VI 면 그 PART 만
+                다시 만드세요.
+              </div>
+            )}
+
             {partIV.items.map((it) => (
               <PartFourItem
                 key={it.rowId}
                 item={{ ...it, ...(context[it.rowId] || {}) }}
                 passages={passages}
                 rows={rows}
+                warnings={exposures.filter((e) => e.rowId === it.rowId)}
                 onAdjust={adjust}
               />
             ))}
@@ -420,7 +474,8 @@ function QuizBody({ quiz }) {
         <div className="quiz-body">
           <p className="hint" style={{ margin: 0 }}>
             영영풀이 · 어휘 관계 · 유의어 고르기 · 글 빈칸 문항을 AI 가 만듭니다. 만든 문항은 아래에서 확인하고,
-            마음에 들지 않으면 다시 만들 수 있습니다.
+            마음에 들지 않으면 다시 만들 수 있습니다. PART I 은 우리말 뜻이 다른 낱말로도 읽히는지 함께 점검합니다
+            (결과는 위 PART I 칸).
           </p>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -667,9 +722,9 @@ function PartBody({ partKey, result, choices }) {
             {it.left} : {it.right} = {it.headword} : <b>{it.hint ? `${it.hint}___` : '___'}</b>
             <span className="dim">
               {' '}
-              → {it.answer} · {it.relation}
+              → {partThreeAnswers(it).join(' · ')}
+              {partThreeAnswers(it).length > 1 && ' (모두 정답)'} · {it.relation}
               {it.note ? ` · ${it.note}` : ''}
-              {it.hintClash?.length > 0 && it.hintUnique !== false && ` · 힌트를 늘림 (${it.hintClash.join(', ')} 와 겹쳐서)`}
             </span>
           </p>
         ))}
@@ -733,13 +788,84 @@ function PartBody({ partKey, result, choices }) {
 }
 
 /**
+ * PART I 점검 결과 — 정답 말고도 학생이 써 낼 만한 말이 있는 문항 (Week 03 검수 5 · 7번).
+ * 흔한 말이 먼저 떠오르면(다르게 → differently) 좁힌 뜻을 제안하고 한 번에 바꾼다. 바꾼 뜻은 이 시험지에만 쓰이고
+ * 단어장 표는 그대로다 — 표를 고치면 만든 시험지가 지워지기 때문이다.
+ * 들어맞기만 하는 말이면(정서적인 → emotional) 채점 기준을 정하라고 알린다. 둘 다 정답해설에 채점 참고로 실린다.
+ */
+function PartOneChecks({ data, hasGen, notes, busy, onCheck, onApply }) {
+  if (!hasGen) {
+    return <p className="hint p1-check">문항을 만들 때 우리말 뜻이 다른 낱말로도 읽히는지 함께 점검합니다.</p>
+  }
+  if (!data || data.error) {
+    return (
+      <p className="hint p1-check">
+        {data?.error ? `PART I 점검 실패 — ${data.error} ` : '이 시험지는 PART I 점검 없이 만들었습니다. '}
+        <button className="btn sm" onClick={onCheck} disabled={busy}>
+          PART I 점검
+        </button>
+      </p>
+    )
+  }
+  if (!notes.length) {
+    return <p className="hint p1-check">PART I 점검 — 다른 낱말로 읽힐 문항이 없습니다.</p>
+  }
+
+  return (
+    <div className="notice-box p1-check">
+      <strong>다른 낱말로도 쓸 수 있는 문항 {notes.length}개</strong>
+      <ul className="p1-list">
+        {notes.map((n) => {
+          const words = n.others.map((o) => `${o.word}${o.why ? ` (${o.why})` : ''}`).join(' · ')
+          return (
+            <li key={n.rowId}>
+              <b>{n.no}번</b> {n.answer} —{' '}
+              {n.applied ? (
+                <>
+                  뜻을 &ldquo;{n.meaning}&rdquo; 로 바꿨습니다.{' '}
+                  <button className="btn ghost sm" onClick={() => onApply(n.rowId, null)}>
+                    단어장 뜻으로 되돌리기
+                  </button>
+                </>
+              ) : n.likely ? (
+                <>
+                  &ldquo;{n.meaning}&rdquo; 을 보고 {words} 를 먼저 쓸 수 있습니다.
+                  {n.suggestion ? (
+                    <>
+                      {' '}
+                      <button className="btn sm" onClick={() => onApply(n.rowId, n.suggestion)}>
+                        &ldquo;{n.suggestion}&rdquo; 로 바꾸기
+                      </button>
+                    </>
+                  ) : (
+                    ' 단어장 뜻을 고치거나 채점 기준을 정해 두세요.'
+                  )}
+                </>
+              ) : (
+                <>
+                  {words} 도 &ldquo;{n.meaning}&rdquo; 에 들어맞습니다. 정답으로 인정할지 채점 기준을 정해 두세요.
+                </>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      <span className="hint">
+        정답해설에 채점 참고로 함께 실립니다. 바꾼 뜻은 이 시험지에만 쓰입니다 — 다음 시험지에도 이어지게 하려면 엑셀에서
+        단어장 뜻을 &ldquo;차등적으로, 다르게&rdquo; 처럼 고쳐 두세요.
+      </span>
+    </div>
+  )
+}
+
+/**
  * 문항 하나. 앞뒤 문장을 붙이고 뗄 수 있고, 40단어를 넘으면 알려준다.
  * rows 를 함께 넘겨야 표(엑셀)에서 고친 출처 문장이 지문 원문 대신 실린다 — 내려받는 문서(docData)와 같은 값을 쓴다.
  */
-function PartFourItem({ item, passages, rows, onAdjust }) {
+function PartFourItem({ item, passages, rows, warnings = [], onAdjust }) {
   const r = renderPartIVItem(item, passages, rows)
   return (
-    <div className={`quiz-item${r.overLimit ? ' over' : ''}`}>
+    <div className={`quiz-item${r.overLimit || warnings.length ? ' over' : ''}`}>
       <div className="qi-head">
         <span className="qi-no">{item.no}</span>
         <span className="qi-form">{FORM_LABEL[item.form]}</span>
@@ -749,6 +875,11 @@ function PartFourItem({ item, passages, rows, onAdjust }) {
       </div>
 
       <p className="qi-text">{r.text}</p>
+      {warnings.map((w) => (
+        <p key={w.text} className="qi-warn">
+          {w.text}
+        </p>
+      ))}
 
       <div className="qi-actions">
         <button className="btn ghost sm" disabled={item.before >= 2 || r.atStart} onClick={() => onAdjust(item.rowId, 'before', 1)}>

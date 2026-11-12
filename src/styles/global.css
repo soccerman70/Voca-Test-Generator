@@ -2893,6 +2893,31 @@ table.quiz-preview td.qa {
   color: var(--ink);
 }
 
+/* 이 문항 글에 다른 문항의 정답이 드러남 */
+.qi-warn {
+  margin: -4px 0 8px;
+  font-size: 12px;
+  color: var(--semantic-down);
+}
+
+/* PART I — 시험지에서 바꾼 뜻 표시, 점검 결과 */
+.qa-note {
+  font-size: 11px;
+  color: var(--semantic-down);
+}
+
+.p1-check {
+  margin: 12px 0 0;
+}
+
+.p1-list {
+  margin: 6px 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .qi-actions {
   display: flex;
   align-items: center;

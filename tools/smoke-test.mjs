@@ -745,14 +745,24 @@ const ivAdvice = shortageAdvice({ part: 'IV', got: 4, need: 5 }, fewVerbs.stats,
 check('동사가 모자라면 빈칸 남은 문장을 고치라고 한다', ivAdvice.fix === 'fill' && ivAdvice.text.includes('빈칸'), ivAdvice.text)
 
 const { uniqueHint, storyPatternIssues, isBeyondExamDistractor } = await import('../src/lib/quizRules.js')
-check('힌트 — stretch 의 반의어 shrink 는 shorten 과 갈리게 shr', uniqueHint('shrink', ['shorten']).hint === 'shr')
-check('힌트 — respective 의 반의어 common 은 collective 와 갈리게 com', uniqueHint('common', ['collective']).hint === 'com')
-check('힌트 — 겹치는 말이 없으면 한 글자', uniqueHint('conceal', ['hide', 'conceal']).hint === 'c')
-check('힌트 — 정답이 다른 말의 앞부분이면 못 갈린다', uniqueHint('common', ['commonplace']).unique === false)
-const { resolveHints } = await import('../src/lib/quizClient.js')
+// 사용자 결정 (Week 03 검수 20번) — 힌트는 두 글자까지. 거기서도 겹치는 말은 함께 정답으로 인정한다
+const hPrev = uniqueHint('previous', ['prior', 'preceding', 'earlier'])
+check('힌트 — subsequent 의 반의어는 prev 가 아니라 pr, previous · prior · preceding 모두 정답',
+  hPrev.hint === 'pr' && hPrev.accepted.join() === 'previous,prior,preceding', JSON.stringify(hPrev))
+const hShrink = uniqueHint('shrink', ['shorten'])
+check('힌트 — shrink · shorten 은 sh 에서 멈추고 둘 다 정답', hShrink.hint === 'sh' && hShrink.accepted.join() === 'shrink,shorten', JSON.stringify(hShrink))
+const hCom = uniqueHint('common', ['collective'])
+check('힌트 — common · collective 는 co, 둘 다 정답', hCom.hint === 'co' && hCom.accepted.length === 2, JSON.stringify(hCom))
+const hCa = uniqueHint('candid', ['cold'])
+check('힌트 — 두 글자로 갈리면 하나만 정답', hCa.hint === 'ca' && hCa.accepted.join() === 'candid', JSON.stringify(hCa))
+check('힌트 — 겹치는 말이 없으면 한 글자', uniqueHint('conceal', ['hide', 'conceal']).hint === 'c' && uniqueHint('conceal', ['hide']).accepted.join() === 'conceal')
+check('힌트 — 정답이 다른 말의 앞부분이어도 두 글자, 둘 다 정답', uniqueHint('common', ['commonplace']).accepted.join() === 'common,commonplace')
+const { resolveHints, checkPart: checkPartIII } = await import('../src/lib/quizClient.js')
 const iii = { items: [{ id: 's1', kind: 'antonym', headword: 'stretch', answer: 'shrink', hint: 's', rivals: [] }] }
 resolveHints(iii, { antonym: [{ id: 's1', antonyms: ['shrink', 'shorten'] }] })
-check('힌트 — 단어장의 다른 반의어도 겹침으로 본다', iii.items[0].hint === 'shr' && iii.items[0].hintClash.join() === 'shorten', JSON.stringify(iii.items[0]))
+check('힌트 — 단어장의 다른 반의어도 겹침으로 본다', iii.items[0].hint === 'sh' && iii.items[0].accepted.join() === 'shrink,shorten', JSON.stringify(iii.items[0]))
+const oldIII = { items: [{ kind: 'antonym', headword: 'subsequent', answer: 'previous', hint: 'prev' }] }
+check('힌트 — 세 글자 이상 드러난 옛 결과는 검사에 짚는다', checkPartIII('III', oldIII).some((x) => x.includes('prev___')))
 
 // 사용자 결정 — 선택지는 고3(수능) 수준까지. 수능 어휘(adversary · harness)는 쓰고, 수능을 넘는 드문 말만 짚는다
 check('오답 — 수능을 넘는 드문 말을 알아본다', ['mendicant', 'Junta', 'lapse into oblivion'].every(isBeyondExamDistractor))
@@ -821,6 +831,119 @@ check('PART VI — 소개 틀 · 교훈 마무리를 금한다', viPrompt.includ
 check('PART VI — "보편적 가치로 마무리" 는 없다', !viPrompt.includes('가치**로 마무리'))
 const iiiPrompt = buildPartIIIPrompt({ derivative: [], synonym: [], antonym: [{ ...qItem, antonyms: ['shrink', 'shorten'] }] })
 check('PART III — 같은 첫 글자 다른 답을 rivals 로 받는다', iiiPrompt.includes('rivals') && iiiPrompt.includes('shorten'))
+
+/* 19. Week 03 시험지 검수 ------------------------------------------ */
+console.log('\n[19] Week 03 시험지 검수 — a(n) · 정답해설 머리 · 정답 노출 · PART I 점검 · 옛 시험지')
+const { neutralArticles } = await import('../src/lib/quizRules.js')
+// 35번 "Mina noticed a ___" — 모음으로 시작하는 authenticity 가 후보에서 빠졌다
+check('a(n) — "noticed a {35}" 는 a(n)', neutralArticles('Mina noticed a {35} in the old records.') === 'Mina noticed a(n) {35} in the old records.')
+check('a(n) — An 은 A(n), an 도 a(n)', neutralArticles('An {31} began. It was an {32}.') === 'A(n) {31} began. It was a(n) {32}.',
+  neutralArticles('An {31} began. It was an {32}.'))
+check('a(n) — PART V 밑줄 빈칸도', neutralArticles('carried out a _______________ in which') === 'carried out a(n) _______________ in which')
+check('a(n) — 이미 a(n) · 낱말 끝의 a · 형용사를 사이에 둔 a 는 그대로',
+  neutralArticles('a(n) {35}, data {31}, a deliberate _____') === 'a(n) {35}, data {31}, a deliberate _____')
+check('PART V · VI 프롬프트에 a(n) 규칙',
+  buildPartVPrompt({ items: [{ ...qItem, synonyms: ['extend'], antonyms: [] }] }).includes('a(n)') && buildPartVIPrompt({ items: [qItem] }).includes('a(n)'))
+
+const { answerHeadText } = await import('../src/lib/exportDocx.js')
+// 정답해설 머리에 연도 · 반 · 주차가 빠졌다. 시험지 머리는 Week 03 으로 나왔다
+const ah = answerHeadText('겨울학기 단어학습', { year: '2027', klass: '완성', week: '03' })
+check('정답해설 머리 — 시험지와 같은 연도 · 반 · 주차', ah === '2027 겨울학기 단어학습 완성반 Week 03 — 정답 및 해설', ah)
+check('정답해설 머리 — 비운 칸은 빈칸 없이 뺀다', answerHeadText('겨울학기 단어학습', { year: '2027' }) === '2027 겨울학기 단어학습 — 정답 및 해설')
+check('정답해설 머리 — 제목의 연도 · 주차를 쓴다',
+  answerHeadText('2027 겨울학기 [실력반] WEEK 09', { year: '2026' }) === '2027 겨울학기 [실력반] WEEK 09 — 정답 및 해설')
+
+// 배정 — PART IV 문장에 나오는 말은 PART I 로 보내지 않고, PART IV 끼리도 서로의 정답 형태를 드러내지 않는다
+const verb = (id, headword, surface, sentence) => ({ id, headword, surface, sentence, pos: '동', meaning: '뜻' })
+const noun = (id, headword, sentence, pos = '명') => ({ id, headword, surface: headword, sentence, pos, meaning: '뜻' })
+const ivRows = [
+  verb('v1', 'induce', 'induced', 'Take emotions induced by television, for example.'),
+  verb('v2', 'outweigh', 'outweigh', 'The benefits may outweigh the risks of heat.'),
+  verb('v3', 'pinpoint', 'pinpointing', 'They succeed by pinpointing their audience with a unique value proposition.'),
+  verb('v6', 'shape', 'shapes', 'Pinpointing the audience shapes a brand.'), // v3 의 정답 형태가 문장에 있다
+  verb('v4', 'expend', 'expends', 'In finding a niche, the listener expends less energy.'),
+  verb('v5', 'coin', 'coined', 'Haslam coined the term concept creep to describe harm.'),
+]
+const fillers = ['apple', 'banana', 'cherry', 'dragon', 'eagle', 'falcon', 'garden', 'harbor', 'island', 'jungle', 'kettle', 'lantern']
+  .map((w, i) => noun(`f${i}`, w, `A sentence about the ${w}.`))
+const w03 = allocate([
+  ...ivRows,
+  noun('n1', 'niche', 'In finding a niche, the listener expends less energy.'),
+  noun('n2', 'value proposition', 'They succeed by pinpointing their audience with a unique value proposition.', '구'),
+  noun('n3', 'concept creep', 'Haslam coined the term concept creep to describe harm.', '구'),
+  noun('p1', 'set oneself apart', 'Brands set themselves apart.', '구'),
+  noun('p2', 'look up to', 'Children look up to them.', '구'),
+  ...fillers,
+])
+const ivIds = w03.parts.IV.map((r) => r.id)
+check('PART IV — 다른 문항의 정답 형태가 든 문장의 동사는 고르지 않는다', ivIds.length === 5 && !ivIds.includes('v6'), ivIds.join(','))
+const iHeads = w03.parts.I.map((r) => r.headword)
+check('PART I — PART IV 문장에 나오는 말(value proposition · concept creep · niche)은 넣지 않는다',
+  iHeads.length === 10 && !['value proposition', 'concept creep', 'niche'].some((w) => iHeads.includes(w)), iHeads.join(','))
+check('PART I — 그래도 숨길 수 있는 어구는 먼저 넣는다', iHeads[0] === 'set oneself apart' && iHeads[1] === 'look up to', iHeads.join(','))
+
+const { answerExposures, partOneNotes, buildPayloads: payloadsOf, withCurrentRules } = await import('../src/lib/quizClient.js')
+const { buildPartI, buildPartIV: partIVOf } = await import('../src/lib/quizBuild.js')
+const exIV = partIVOf([ivRows[4], ivRows[1]])
+const exTexts = ['In finding a niche, the listener _______________ less energy.', 'The benefits may _______________ the risks; she expends little.']
+const ex = answerExposures({ partI: buildPartI([noun('n1', 'niche', '')]), partIV: exIV, partIVTexts: exTexts })
+check('정답 노출 — PART IV 문장의 PART I 정답(niche)', ex.some((e) => e.rowId === 'v4' && e.text.includes('PART I 1번 정답 niche')), JSON.stringify(ex.map((e) => e.text)))
+check('정답 노출 — PART IV 다른 문항의 정답 형태(expends)', ex.some((e) => e.rowId === 'v2' && e.text.includes('PART IV 21번 정답 expends')), JSON.stringify(ex.map((e) => e.text)))
+const exNiches = answerExposures({ partI: buildPartI([noun('n1', 'niche', '')]), partIV: partIVOf([]), gen: { byPart: { V: { result: { items: [{ sentence: 'Species occupy different niches _____ here.' }] } } } } })
+check('정답 노출 — 굴절형(niches)도, PART V 문장도', exNiches.length === 1 && exNiches[0].text.startsWith('PART V 26번'), JSON.stringify(exNiches))
+const exIII = answerExposures({ gen: { byPart: { III: { result: { items: [{ answer: 'previous', accepted: ['previous', 'prior', 'preceding'] }] } }, VI: { result: { story: 'She had no prior {31} at all.' } } } } })
+check('정답 노출 — PART III 인정 정답(prior)이 PART VI 글에', exIII.length === 1 && exIII[0].text === 'PART VI 글에 PART III 16번 정답 prior 이(가) 드러남', JSON.stringify(exIII))
+check('정답 노출 — 없으면 빈 목록', answerExposures({ partI: buildPartI([noun('f', 'apple', '')]), partIV: exIV, partIVTexts: exTexts.slice(0, 1) }).every((e) => !e.text.includes('apple')))
+
+// 재료 — PART V · VI 에 PART I 정답을 쓰지 말라고, PART III 에는 PART IV 문장에 나오는 후보를 고르지 말라고 넘긴다
+const pl = payloadsOf({
+  ...w03.parts,
+  III: { derivative: [], synonym: [{ ...noun('s1', 'calm', ''), synonyms: [{ word: 'serenity' }, { word: 'energy' }] }], antonym: [] },
+})
+check('재료 — V · VI 에 PART I 정답을 쓰지 말 낱말로', pl.V.avoid.join() === iHeads.join() && pl.VI.avoid.join() === iHeads.join(), pl.V.avoid.join())
+check('재료 — III 후보 가운데 PART IV 문장에 나오는 말(energy)', JSON.stringify(pl.III.synonym[0].avoid) === '["energy"]', JSON.stringify(pl.III.synonym[0].avoid))
+check('재료 — PART I 점검에 10문항', pl.I.items.length === 10 && pl.I.items[0].prompt && pl.I.items[0].answer === 'set oneself apart')
+const viAvoid = buildPartVIPrompt({ items: [qItem], avoid: ['niche', 'concept creep'] })
+check('PART VI 프롬프트 — 쓰지 말 낱말이 실린다', viAvoid.includes('글에 쓰지 말 낱말') && viAvoid.includes('concept creep'))
+check('PART III 프롬프트 — 고르지 말 후보가 실린다', buildPartIIIPrompt({ derivative: [], synonym: [{ ...qItem, synonyms: ['extend'], avoid: ['extend'] }], antonym: [] }).includes('정답으로 고르지 말 것: extend'))
+
+// PART I 점검 — 7번 "다르게" 는 differently 로 쓴다(뜻을 좁힘), 5번 "정서적인" 은 emotional 과 겹친다(채점 기준)
+const { buildPartICheckPrompt } = await import('../server/quizPrompts.js')
+const iPrompt = buildPartICheckPrompt({ items: [{ id: 'd1', no: 7, prompt: '다르게', answer: 'differentially', pos: '부', synonyms: 'differently' }] })
+check('PART I 점검 프롬프트 — 다른 낱말 · likely · 좁힌 뜻을 받는다',
+  iPrompt.includes('differently') && iPrompt.includes('"likely"') && iPrompt.includes('차등적으로') && iPrompt.includes('정서적인'))
+const p1Rows = [
+  { id: 'd1', headword: 'differentially', pos: '부', meaning: '다르게', synonyms: [{ word: 'differently' }] },
+  { id: 'a1', headword: 'affective', pos: '형', meaning: '정서적인', synonyms: [{ word: 'emotional' }] },
+  { id: 'c1', headword: 'causal', pos: '형', meaning: '인과적인', synonyms: [] },
+]
+const p1Check = { items: [
+  { id: 'd1', others: [{ word: 'differently', likely: true, why: '훨씬 흔함' }], prompt: '차등적으로' },
+  { id: 'a1', others: [{ word: 'emotional', likely: false }], prompt: '' },
+  { id: 'c1', others: [{ word: 'Causal', likely: true }], prompt: '' }, // 정답 자신(굴절 · 대소문자)은 다른 말로 치지 않는다
+] }
+const notes = partOneNotes(p1Check, buildPartI(p1Rows))
+check('PART I 점검 — 정답 자신은 빼고 두 문항', notes.length === 2, JSON.stringify(notes.map((n) => n.answer)))
+check('PART I 점검 — 흔한 말이면 좁힌 뜻을 제안', notes[0]?.no === 1 && notes[0].likely && notes[0].suggestion === '차등적으로', JSON.stringify(notes[0]))
+check('PART I 점검 — 들어맞기만 하면 채점 기준', notes[1]?.no === 2 && !notes[1].likely, JSON.stringify(notes[1]))
+const narrowed = buildPartI(p1Rows, 1, { d1: '차등적으로' })
+check('PART I — 바꾼 뜻으로 문항을 낸다', narrowed[0].prompt === '차등적으로' && narrowed[0].meaning === '차등적으로' && narrowed[1].prompt === '정서적인')
+check('PART I — 바꾼 문항은 applied', partOneNotes(p1Check, narrowed, { d1: '차등적으로' })[0].applied === true)
+check('PART I — 어구는 바꾼 뜻에도 낱말 수', buildPartI([{ id: 'x', headword: 'set oneself apart', meaning: '돋보이다' }], 1, { x: '자신을 돋보이게 하다' })[0].prompt === '자신을 돋보이게 하다 (3)')
+
+// 그 전에 만든 시험지 — 다시 만들지 않고 내려받아도 지금 규칙(두 글자 힌트 · 인정 정답 · a(n))이 입혀진다
+const oldGen = {
+  payloads: { III: { antonym: [{ id: 'a', antonyms: ['prior', 'preceding'] }] } },
+  byPart: {
+    III: { result: { items: [{ id: 'a', kind: 'antonym', headword: 'subsequent', answer: 'previous', hint: 'prev', rivals: [] }] }, issues: ['옛 검사'] },
+    VI: { result: { story: 'Mina noticed a {35} in the old records.' } },
+  },
+}
+const nowGen = withCurrentRules(oldGen)
+const nowIII = nowGen.byPart.III.result.items[0]
+check('옛 시험지 — 힌트 pr · 세 말 모두 정답', nowIII.hint === 'pr' && nowIII.accepted.join() === 'previous,prior,preceding', JSON.stringify(nowIII))
+check('옛 시험지 — a(n) · 옛 검사 다시 셈', nowGen.byPart.VI.result.story.includes('a(n) {35}') && !nowGen.byPart.III.issues.includes('옛 검사'))
+check('옛 시험지 — 저장된 값은 그대로', oldGen.byPart.III.result.items[0].hint === 'prev' && oldGen.byPart.VI.result.story.includes(' a {35}'))
 
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)

@@ -12,7 +12,7 @@
  * 그래서 이 모듈은 판정만 하고 무엇을 지울지는 정하지 않는다 — 경고까지가 역할이다.
  */
 
-import { isPhrase } from './tokenize.js'
+import { isPhrase, tokenize } from './tokenize.js'
 
 /** 어근이 이보다 짧아지면 자르지 않는다. ration → rat 같은 오탐을 막는 유일한 방어선이다. */
 const MIN_STEM = 4
@@ -101,6 +101,71 @@ export function inflectionKey(surface) {
 
   const w = normalizeWord(raw)
   return w ? stripInflection(w) : ''
+}
+
+/**
+ * 묵음 e 를 뗀 열쇠. immerse 는 그대로지만 immersed 는 immers 가 되어 서로 어긋난다.
+ * create/created, produce/produced 처럼 흔한 부류라 이것 없이는 동사 상당수를 놓친다.
+ *
+ * 남는 길이가 4자 미만이면 만들지 않는다 — rate 를 rat 으로 줄이면 문장 속 rats 와 잘못 묶인다.
+ * MIN_STEM 과 같은 이유이고 같은 값이다.
+ */
+export function silentEKey(key) {
+  const stem = key.replace(/e$/, '')
+  return stem !== key && stem.length >= MIN_STEM ? stem : ''
+}
+
+/** 양끝이 낱말 경계인 자리만 찾는다. 찾으면 원문의 표기 그대로 돌려준다. */
+export function findWholeWord(text, needle) {
+  const isWordChar = (ch) => ch !== undefined && /[A-Za-z0-9]/.test(ch)
+  const lower = String(text || '').toLowerCase()
+  const target = String(needle || '').toLowerCase()
+  if (!target) return null
+
+  for (let at = lower.indexOf(target); at !== -1; at = lower.indexOf(target, at + 1)) {
+    if (!isWordChar(text[at - 1]) && !isWordChar(text[at + target.length])) {
+      return text.slice(at, at + target.length)
+    }
+  }
+  return null
+}
+
+/**
+ * 글 안에서 그 낱말(어구)이 굴절형으로라도 나온 자리를 찾는다 — develop 으로 Developing 을, rely 로 relied 를.
+ * 단어장 불러오기가 surface 를 되찾을 때, 시험지가 다른 문항의 정답이 글에 드러났는지 볼 때 쓴다.
+ *
+ * 규칙 기반이라 buy/bought 같은 불규칙은 못 잡는다.
+ * @returns {string|null} 글에 나온 그대로의 형태. 없으면 null.
+ */
+export function findInflected(word, text) {
+  const head = String(word || '').trim()
+  const body = String(text || '')
+  if (!head || !body) return null
+
+  // 그대로 있으면 더 볼 것이 없다 (대소문자만 다를 수 있다).
+  // 낱말 경계를 반드시 확인한다 — 안 그러면 developing 에서 develop 만 잘라내 온다.
+  const exact = findWholeWord(body, head)
+  if (exact) return exact
+
+  const words = tokenize(body).filter((t) => t.isWord)
+  const key = inflectionKey(head)
+  if (!key) return null
+
+  if (!isPhrase(head)) {
+    const keys = new Set([key, silentEKey(key)].filter(Boolean))
+    const hit = words.find((t) => keys.has(inflectionKey(t.text)))
+    return hit ? hit.text : null
+  }
+
+  // 어구는 같은 낱말 수만큼 창을 밀며 굴절을 뗀 형태끼리 견준다
+  const size = head.split(/\s+/).length
+  for (let i = 0; i + size <= words.length; i += 1) {
+    const window = words.slice(i, i + size)
+    if (inflectionKey(window.map((t) => t.text).join(' ')) === key) {
+      return body.slice(window[0].start, window[size - 1].end)
+    }
+  }
+  return null
 }
 
 /**

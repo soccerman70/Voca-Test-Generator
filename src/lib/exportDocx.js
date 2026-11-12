@@ -22,6 +22,7 @@ import {
   LineRuleType,
 } from 'docx'
 import { DEFAULT_TITLE } from './exportXlsx.js'
+import { partThreeAnswers } from './quizRules.js'
 
 /** 제목용 — 시험지 상단 타이틀과 대제목 */
 const F_TITLE = { ascii: 'Noto Serif KR', eastAsia: 'Noto Serif KR', hAnsi: 'Noto Serif KR' }
@@ -123,16 +124,36 @@ export function wrongReasons(it) {
  * @returns {{ lead: string, week: string, fromTitle: {year: string, week: string} }}
  */
 export function testHeadParts(title, head = {}) {
+  const { year, rest, klass, week, fromTitle } = headFields(title, head)
+  return {
+    lead: `${year || '202__'} ${rest} ${klass || '_____'}반`,
+    week: week || 'Week #',
+    fromTitle,
+  }
+}
+
+/** 머리 칸 값 — 제목에서 뗀 연도 · 주차가 이기고, 붙여 쓴 `반` · `주차` · `Week` · `년` 은 걷는다. 비면 빈 문자열 */
+function headFields(title, head = {}) {
   const clean = (v, re) => String(v ?? '').trim().replace(re, '').trim()
   const { rest, year: titleYear, week: titleWeek } = splitTitleHead(title)
-  const year = titleYear || clean(head.year, /년$/)
-  const klass = clean(head.klass, /반$/)
   const week = clean(head.week, /^week\s*|주차$/gi)
   return {
-    lead: `${year || '202__'} ${rest || DEFAULT_TITLE} ${klass || '_____'}반`,
-    week: titleWeek || `Week ${week || '#'}`,
+    year: titleYear || clean(head.year, /년$/),
+    rest: rest || DEFAULT_TITLE,
+    klass: clean(head.klass, /반$/),
+    week: titleWeek || (week ? `Week ${week}` : ''),
     fromTitle: { year: titleYear, week: titleWeek },
   }
+}
+
+/**
+ * 정답 · 해설지 머리 — 시험지 머리와 같은 연도 · 제목 · 반 · 주차 (Week 03 검수: 정답해설에는 제목만 찍혀
+ * 어느 반 몇 주차인지 알 수 없었다). 손으로 쓸 빈칸은 남기지 않는다 — 비운 칸은 뺀다.
+ * `2027 겨울학기 단어학습 완성반 Week 03 — 정답 및 해설`
+ */
+export function answerHeadText(title, head = {}) {
+  const { year, rest, klass, week } = headFields(title, head)
+  return `${[year, rest, klass && `${klass}반`, week].filter(Boolean).join(' ')} — 정답 및 해설`
 }
 
 /**
@@ -371,7 +392,8 @@ function partSix(gen, choices) {
 }
 
 /**
- * @param {object} data { title, head, partI, partIV, partIVTexts, gen } — head 는 { year, klass, week }
+ * @param {object} data { title, head, partI, partINotes, partIV, partIVTexts, gen } — head 는 { year, klass, week }.
+ *   gen 은 지금 규칙을 입힌 것(withCurrentRules)을 받는다 — 화면과 같은 힌트 · a(n) 이 찍힌다.
  */
 export function buildTestDoc(data) {
   const { title, head, partI, partIV, partIVTexts, gen } = data
@@ -458,15 +480,37 @@ function answerPartOne(partI) {
   return [partHead('I', '우리말 → 영어 쓰기'), table([headRow, ...rows])]
 }
 
+/**
+ * PART I 채점 참고 — 정답 말고도 그 우리말에 들어맞는 말이 있는 문항 (PART I 점검, partOneNotes).
+ * 정답해설의 유의어 칸에 있는 말이 학생 답으로 나오면 맞다고 할지 정해 두어야 한다 (Week 03 검수 5 · 7번).
+ */
+function gradingNotes(notes) {
+  if (!notes?.length) return []
+  return [
+    para(ui('채점 참고', { size: PT(8.5), bold: true, color: NAVY }), { spacing: { before: 100, after: 30 } }),
+    ...notes.map((n) => {
+      const words = n.others.map((o) => o.word).join(' · ')
+      const text = n.applied
+        ? `뜻을 "${n.meaning}" 로 좁혔다 — ${words} 는 이 뜻에 맞지 않는다`
+        : `${words} 도 "${n.meaning}" 에 들어맞는다 — 정답으로 인정할지 정해 둘 것`
+      return para([t(`${n.no}. ${n.answer}  `, { size: PT(9), bold: true }), ui(text, { size: PT(9) })], {
+        indent: { left: 240 },
+        spacing: { after: 30 },
+      })
+    }),
+  ]
+}
+
 export function buildAnswerDoc(data) {
-  const { title, partI, partIV, partIVTexts, gen } = data
+  const { title, head, partI, partINotes, partIV, partIVTexts, gen } = data
   const children = [
     new Paragraph({
-      children: [ui(`${title || '어휘 심화 TEST'} — 정답 및 해설`, { font: F_TITLE, bold: true, size: PT(14), color: RED })],
+      children: [ui(answerHeadText(title, head), { font: F_TITLE, bold: true, size: PT(14), color: RED })],
       border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: RED } },
       spacing: { after: 140 },
     }),
     ...answerPartOne(partI),
+    ...gradingNotes(partINotes),
   ]
 
   // PART II
@@ -495,8 +539,10 @@ export function buildAnswerDoc(data) {
   if (three) {
     children.push(partHead('III', '어휘 관계 분석'))
     ;(three.items || []).forEach((it, i) => {
+      // 힌트(두 글자)로 여러 말이 들어맞으면 모두 정답 — previous · prior · preceding (모두 정답)
+      const answers = partThreeAnswers(it)
       children.push(
-        ...card(16 + i, it.answer, [
+        ...card(16 + i, answers.length > 1 ? `${answers.join(' · ')} (모두 정답)` : answers[0] || '', [
           ['문항', `${it.left} : ${it.right} = ${it.headword} : ?`],
           ['관계', it.relation],
           ['형태', it.note],

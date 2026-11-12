@@ -10,8 +10,7 @@ import {
   toRowObjects,
   parseDerivatives,
 } from './exportXlsx.js'
-import { inflectionKey } from './duplicates.js'
-import { tokenize, isPhrase } from './tokenize.js'
+import { inflectionKey, silentEKey, findWholeWord, findInflected } from './duplicates.js'
 import { stripParagraphLabel, dropSummarySentences } from './passages.js'
 
 /** 셀 값 → 문자열. 서식 있는 글자와 수식 결과도 평문으로 꺼낸다. */
@@ -76,63 +75,12 @@ export function parseWords(text) {
  * 규칙 기반이라 buy/bought 같은 불규칙은 못 잡는다. 못 잡으면 표제어를 그대로 두고
  * 몇 개를 못 찾았는지 호출부에 알린다 — 조용히 넘어가면 결과가 왜 나빠졌는지 알 방법이 없다.
  *
+ * 찾는 일은 duplicates.js 의 findInflected 가 한다 — 시험지의 정답 노출 검사도 같은 함수를 쓴다.
+ *
  * @returns {string|null} 찾은 형태. 못 찾으면 null.
  */
 export function recoverSurface(headword, sentence) {
-  const head = String(headword || '').trim()
-  const text = String(sentence || '')
-  if (!head || !text) return null
-
-  // 원문에 그대로 있으면 더 볼 것이 없다 (대소문자만 다를 수 있다).
-  // 낱말 경계를 반드시 확인한다 — 안 그러면 developing 에서 develop 만 잘라내 온다.
-  const exact = findWholeWord(text, head)
-  if (exact) return exact
-
-  const words = tokenize(text).filter((t) => t.isWord)
-  const key = inflectionKey(head)
-  if (!key) return null
-
-  if (!isPhrase(head)) {
-    const keys = new Set([key, silentEKey(key)].filter(Boolean))
-    const hit = words.find((t) => keys.has(inflectionKey(t.text)))
-    return hit ? hit.text : null
-  }
-
-  // 어구는 같은 낱말 수만큼 창을 밀며 굴절을 뗀 형태끼리 견준다
-  const size = head.trim().split(/\s+/).length
-  for (let i = 0; i + size <= words.length; i += 1) {
-    const window = words.slice(i, i + size)
-    if (inflectionKey(window.map((t) => t.text).join(' ')) === key) {
-      return text.slice(window[0].start, window[size - 1].end)
-    }
-  }
-  return null
-}
-
-/**
- * 묵음 e 를 뗀 열쇠. immerse 는 그대로지만 immersed 는 immers 가 되어 서로 어긋난다.
- * create/created, produce/produced 처럼 흔한 부류라 이것 없이는 동사 상당수를 놓친다.
- *
- * 남는 길이가 4자 미만이면 만들지 않는다 — rate 를 rat 으로 줄이면 문장 속 rats 와 잘못 묶인다.
- * duplicates.js 의 MIN_STEM 과 같은 이유이고 같은 값이다.
- */
-function silentEKey(key) {
-  const stem = key.replace(/e$/, '')
-  return stem !== key && stem.length >= 4 ? stem : ''
-}
-
-/** 양끝이 낱말 경계인 자리만 찾는다. 찾으면 원문의 표기 그대로 돌려준다. */
-function findWholeWord(text, needle) {
-  const isWordChar = (ch) => ch !== undefined && /[A-Za-z0-9]/.test(ch)
-  const lower = text.toLowerCase()
-  const target = needle.toLowerCase()
-
-  for (let at = lower.indexOf(target); at !== -1; at = lower.indexOf(target, at + 1)) {
-    if (!isWordChar(text[at - 1]) && !isWordChar(text[at + target.length])) {
-      return text.slice(at, at + target.length)
-    }
-  }
-  return null
+  return findInflected(headword, sentence)
 }
 
 /** 출처 칸이 "3" 이면 지문 번호를 알 수 있다. "11강-3" 이면 알 수 없다. */

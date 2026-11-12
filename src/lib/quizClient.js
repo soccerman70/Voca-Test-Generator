@@ -8,19 +8,26 @@
  * 검사는 막지 않고 알리기만 한다 — 고칠지는 화면에서 사람이 정한다.
  */
 
-import { inflectionKey } from './duplicates.js'
+import { inflectionKey, findInflected, findWholeWord } from './duplicates.js'
 import { apiBase } from './aiClient.js'
-import { countWords, shuffleChoices } from './quizBuild.js'
+import { countWords, shuffleChoices, buildPartI } from './quizBuild.js'
 import {
   isBeyondExamDistractor,
   storyPatternIssues,
   uniqueHint,
+  HINT_MAX,
+  partThreeAnswers,
+  neutralArticles,
   STORY_OPENINGS,
   STORY_ENDINGS,
   CHOICE_ROLES,
 } from './quizRules.js'
 
-export const QUIZ_PARTS = ['II', 'III', 'V', 'VI']
+/**
+ * AI 를 부르는 PART. I 은 단어장으로 조립되고 AI 는 다른 낱말로 읽힐 여지만 점검한다
+ * (Week 03 검수: "다르게" 는 differently 로 쓴다). II · III · V · VI 는 AI 가 만든다.
+ */
+export const QUIZ_PARTS = ['I', 'II', 'III', 'V', 'VI']
 
 async function post(body) {
   // 브라우저는 같은 출처, node 점검 도구는 VOCA_API_BASE (aiClient 와 같은 규칙)
@@ -43,16 +50,38 @@ const withPos = (list) => (list || []).map((d) => (d.pos ? `${d.word} (${d.pos})
 
 const basic = (row) => ({ id: row.id, headword: row.headword, pos: row.pos, meaning: row.meaning })
 
-export function buildPayloads(parts, startNo = 31) {
+/** 후보 가운데 PART IV 문장에 (굴절형으로라도) 나오는 말 — 정답으로 고르면 PART IV 가 답을 보여준다 */
+const shownIn = (sentences, candidates) =>
+  candidates.map((w) => w.replace(/\s*\([^)]*\)$/, '')).filter((w) => sentences.some((s) => findInflected(w, s)))
+
+/**
+ * @param {object} meanings PART I 에서 사람이 좁혀 바꾼 뜻 { [rowId]: '차등적으로' }
+ */
+export function buildPayloads(parts, startNo = 31, meanings = {}) {
+  const ivSentences = parts.IV.map((r) => r.sentence || '')
+  // PART I 정답은 학생이 쓰는 말이다. 다른 PART 의 글에 나오면 답이 드러난다
+  const partIAnswers = parts.I.map((r) => r.headword).filter(Boolean)
+  const withAvoid = (item, list) => ({ ...item, avoid: shownIn(ivSentences, list) })
   return {
+    I: {
+      items: buildPartI(parts.I, 1, meanings).map((q) => ({
+        id: q.rowId,
+        no: q.no,
+        prompt: q.prompt,
+        answer: q.answer,
+        pos: q.pos,
+        synonyms: q.synonyms,
+      })),
+    },
     II: { items: parts.II.map(basic) },
     III: {
-      derivative: parts.III.derivative.map((r) => ({ ...basic(r), derivatives: withPos(r.derivatives) })),
-      synonym: parts.III.synonym.map((r) => ({ ...basic(r), synonyms: words(r.synonyms) })),
-      antonym: parts.III.antonym.map((r) => ({ ...basic(r), antonyms: words(r.antonyms) })),
+      derivative: parts.III.derivative.map((r) => withAvoid({ ...basic(r), derivatives: withPos(r.derivatives) }, withPos(r.derivatives))),
+      synonym: parts.III.synonym.map((r) => withAvoid({ ...basic(r), synonyms: words(r.synonyms) }, words(r.synonyms))),
+      antonym: parts.III.antonym.map((r) => withAvoid({ ...basic(r), antonyms: words(r.antonyms) }, words(r.antonyms))),
     },
     V: {
       items: parts.V.map((r) => ({ ...basic(r), synonyms: words(r.synonyms), antonyms: words(r.antonyms) })),
+      avoid: partIAnswers,
     },
     VI: {
       items: parts.VI.map(basic),
@@ -60,14 +89,15 @@ export function buildPayloads(parts, startNo = 31) {
       // 이야기의 도입 · 마무리 틀을 매번 다르게 고른다 (Week 07~09 가 모두 같은 틀이었다)
       opening: Math.floor(Math.random() * STORY_OPENINGS.length),
       ending: Math.floor(Math.random() * STORY_ENDINGS.length),
+      avoid: partIAnswers,
     },
   }
 }
 
 /**
- * PART III 유의어 · 반의어 문항의 첫 글자 힌트를 정답 하나로 좁혀지게 늘린다.
+ * PART III 유의어 · 반의어 문항의 첫 글자 힌트(두 글자까지)와 인정할 정답을 정한다.
  * 같은 관계가 되는 다른 말은 AI 가 rivals 에 적은 것과 단어장의 같은 칸 후보를 합쳐 본다.
- * 받은 결과를 고쳐 쓴다 — 화면과 docx 가 같은 힌트를 쓰도록.
+ * 받은 결과를 고쳐 쓴다 — 화면과 docx 가 같은 힌트 · 같은 정답을 쓰도록.
  */
 export function resolveHints(result, payload) {
   const candidates = new Map()
@@ -76,13 +106,35 @@ export function resolveHints(result, payload) {
   for (const it of result?.items || []) {
     if (it.kind !== 'synonym' && it.kind !== 'antonym') continue
     const rivals = [...(Array.isArray(it.rivals) ? it.rivals : []), ...(candidates.get(String(it.id)) || [])]
-    const { hint, clash, unique } = uniqueHint(it.answer, rivals)
+    const { hint, accepted, clash } = uniqueHint(it.answer, rivals)
     if (!hint) continue
     it.hint = hint
+    it.accepted = accepted
     it.hintClash = clash
-    it.hintUnique = unique
   }
   return result
+}
+
+/**
+ * 저장된 AI 결과에 지금 규칙을 다시 입힌 사본 — PART III 힌트(두 글자)와 인정 정답, PART V · VI 빈칸 앞 a(n).
+ * 규칙을 바꾸기 전에 만든 시험지도 문항을 다시 만들지 않고 내려받기만 하면 맞는다.
+ * 받은 값은 건드리지 않는다. 몇 번을 입혀도 결과가 같다.
+ */
+export function withCurrentRules(gen) {
+  if (!gen?.byPart) return gen
+  const byPart = { ...gen.byPart }
+  const three = byPart.III?.result
+  if (Array.isArray(three?.items)) {
+    const result = resolveHints({ ...three, items: three.items.map((it) => ({ ...it })) }, gen.payloads?.III)
+    byPart.III = { ...byPart.III, result, issues: checkIII(result) }
+  }
+  const five = byPart.V?.result
+  if (Array.isArray(five?.items)) {
+    byPart.V = { ...byPart.V, result: { ...five, items: five.items.map((it) => ({ ...it, sentence: neutralArticles(it.sentence) })) } }
+  }
+  const six = byPart.VI?.result
+  if (six?.story) byPart.VI = { ...byPart.VI, result: { ...six, story: neutralArticles(six.story) } }
+  return { ...gen, byPart }
 }
 
 /* ------------------------------------------------------------------ */
@@ -176,10 +228,9 @@ function checkIII(result) {
       issues.push(`${it.headword} — 첫 글자 힌트가 없음`)
     } else if (!String(it.answer || '').toLowerCase().startsWith(String(it.hint).toLowerCase())) {
       issues.push(`${it.headword} — 힌트(${it.hint})가 정답(${it.answer})의 앞부분과 다름`)
-    } else if (it.hintUnique === false) {
-      issues.push(`${it.headword} — 힌트를 늘려도 ${it.hintClash.join(', ')} 와(과) 갈리지 않음 (다른 정답으로 다시 만들 것)`)
-    } else if (it.hint.length * 2 > String(it.answer).length) {
-      issues.push(`${it.headword} — ${it.hintClash.join(', ')} 와(과) 갈리려면 힌트가 ${it.hint}___ 까지 길어짐`)
+    } else if (it.hint.length > HINT_MAX) {
+      // 힌트는 두 글자까지 — 겹치는 말은 함께 정답으로 인정한다 (resolveHints)
+      issues.push(`${it.headword} — 힌트가 ${it.hint}___ 로 ${it.hint.length}글자 드러남 (${HINT_MAX}글자까지)`)
     }
   }
   return issues
@@ -271,7 +322,92 @@ function checkVI(result, payload) {
   return issues
 }
 
-const CHECK = { II: checkII, III: checkIII, V: checkV, VI: checkVI }
+/** PART I 점검은 응답이 빠지지 않았는지만 센다. 걸린 문항은 partOneNotes 가 화면 · 정답해설에 싣는다 */
+function checkI(result, payload) {
+  const got = new Set((result?.items || []).map((c) => String(c.id)))
+  const missing = payload.items.filter((it) => !got.has(String(it.id)))
+  return missing.length ? [`점검 결과에 ${missing.map((it) => `${it.no}번`).join(' · ')} 이(가) 없음`] : []
+}
+
+const CHECK = { I: checkI, II: checkII, III: checkIII, V: checkV, VI: checkVI }
+
+/**
+ * PART I 에서 정답 말고도 학생이 쓸 만한 말이 있는 문항 (PART I 점검 결과 + 지금 문항).
+ * - likely: 정답보다 흔하거나 쉬워 학생이 먼저 쓸 말이 있다 → 뜻을 좁히기를 권한다 (Week 03 7번 "다르게" → differently)
+ * - 아니면 들어맞기는 하는 말이다 → 채점 기준을 정해 둔다 (Week 03 5번 "정서적인" → emotional)
+ * 뜻을 바꿔도 점검 결과는 바꾸기 전 뜻에 대한 것이므로 applied 로 따로 알린다.
+ *
+ * @param {object} result PART I 점검 결과 { items: [{ id, others: [{word, likely, why}], prompt }] }
+ * @param {Array} partI buildPartI 결과 (바꾼 뜻이 들어간 것)
+ * @param {object} meanings 사람이 바꾼 뜻 { [rowId]: text }
+ */
+export function partOneNotes(result, partI, meanings = {}) {
+  const byId = new Map((result?.items || []).map((c) => [String(c.id), c]))
+  const notes = []
+  for (const q of partI || []) {
+    const c = byId.get(String(q.rowId))
+    const answerKey = inflectionKey(q.answer)
+    const others = (Array.isArray(c?.others) ? c.others : [])
+      .filter((o) => o && String(o.word || '').trim() && inflectionKey(o.word) !== answerKey)
+      .map((o) => ({ word: String(o.word).trim(), likely: o.likely === true, why: String(o.why || '') }))
+    if (!others.length) continue
+    notes.push({
+      no: q.no,
+      rowId: q.rowId,
+      answer: q.answer,
+      meaning: q.meaning,
+      others,
+      likely: others.some((o) => o.likely),
+      suggestion: String(c.prompt || '').replace(/\s*\(\d+\)\s*$/, '').trim(),
+      applied: Boolean(meanings?.[q.rowId]),
+    })
+  }
+  return notes
+}
+
+/**
+ * 다른 문항의 정답이 문항 글에 드러나는지 (Week 03 검수: PART IV 23 · 24 · 25번에 PART I 정답 value proposition ·
+ * niche · concept creep 이 그대로 나왔다). 학생이 써야 하는 정답만 본다.
+ *   - PART I 정답, PART III 정답(인정하는 말 모두) — 굴절형까지
+ *   - PART IV 정답 형태(원형과 다를 때) — 그 형태 그대로. 원형은 보기에 이미 있다
+ * 보는 글: PART IV 문항(앞뒤로 붙인 문장 포함) · PART V 문장 · PART VI 글.
+ * 앞뒤 문장은 화면에서 사람이 붙이므로 그때마다 다시 본다.
+ *
+ * @returns {Array<{ where: string, rowId?: string, text: string }>}
+ */
+export function answerExposures({ partI = [], partIV = { items: [] }, partIVTexts = [], gen } = {}) {
+  const texts = [
+    ...partIV.items.map((it, i) => ({ where: `PART IV ${it.no}번`, rowId: it.rowId, text: partIVTexts[i] || '' })),
+    ...(gen?.byPart?.V?.result?.items || []).map((it, i) => ({ where: `PART V ${26 + i}번`, text: it.sentence || '' })),
+    ...(gen?.byPart?.VI?.result?.story
+      ? [{ where: 'PART VI', text: String(gen.byPart.VI.result.story).replace(/\{\d+\}/g, '___') }]
+      : []),
+  ]
+  const answers = [
+    ...partI.map((q) => ({ label: `PART I ${q.no}번 정답`, words: [q.answer], inflected: true })),
+    ...(gen?.byPart?.III?.result?.items || []).map((it, i) => ({
+      label: `PART III ${16 + i}번 정답`,
+      words: partThreeAnswers(it),
+      inflected: true,
+    })),
+    ...partIV.items
+      .filter((it) => it.answer && String(it.answer).toLowerCase() !== String(it.base).toLowerCase())
+      .map((it) => ({ label: `PART IV ${it.no}번 정답`, words: [it.answer], inflected: false })),
+  ]
+
+  const out = []
+  for (const t of texts) {
+    for (const a of answers) {
+      for (const w of a.words) {
+        const found = a.inflected ? findInflected(w, t.text) : findWholeWord(t.text, w)
+        if (!found) continue
+        out.push({ where: t.where, rowId: t.rowId, text: `${t.where} 글에 ${a.label} ${w} 이(가) 드러남${found.toLowerCase() === w.toLowerCase() ? '' : ` (${found})`}` })
+        break
+      }
+    }
+  }
+  return out
+}
 
 /**
  * PART V 복수 정답 점검 결과(it.answerCheck)를 정답과 견준다.
@@ -321,7 +457,7 @@ function crossCheck(byPart) {
 
   const dw = byPart.II?.result?.distractor?.word
   if (dw) note(dw, 'PART II distractor')
-  for (const it of byPart.III?.result?.items || []) note(it.answer, 'PART III 정답')
+  for (const it of byPart.III?.result?.items || []) for (const a of partThreeAnswers(it)) note(a, 'PART III 정답')
   for (const it of byPart.V?.result?.items || []) {
     for (const n of it.answers || []) note((it.choices || [])[n - 1], 'PART V 정답')
   }
@@ -371,9 +507,9 @@ export async function checkPartVAnswers(result, { model, effort }) {
  * only 를 주면 그 PART 만 다시 만들고 나머지는 previous(지난 결과) 그대로 둔다.
  * 검사에 걸린 PART 하나 때문에 멀쩡한 셋까지 버리지 않게 한다.
  */
-export async function generateQuizParts({ parts, model, effort, startNo = 31, onProgress, signal, only, previous }) {
+export async function generateQuizParts({ parts, model, effort, startNo = 31, onProgress, signal, only, previous, meanings }) {
   const targets = only?.length ? QUIZ_PARTS.filter((p) => only.includes(p)) : QUIZ_PARTS
-  const fresh = buildPayloads(parts, startNo)
+  const fresh = buildPayloads(parts, startNo, meanings)
   // 다시 만들지 않는 PART 는 지난 재료를 그대로 둔다 (VI 의 도입 · 마무리 틀도)
   const payloads = previous?.payloads
     ? Object.fromEntries(QUIZ_PARTS.map((p) => [p, targets.includes(p) ? fresh[p] : previous.payloads[p] || fresh[p]]))
@@ -390,6 +526,9 @@ export async function generateQuizParts({ parts, model, effort, startNo = 31, on
       try {
         const { result, usage, durationMs } = await post({ part, payload: payloads[part], model, effort })
         if (part === 'III') resolveHints(result, payloads.III)
+        // 빈칸 바로 앞 관사는 a(n) — "a ___" 는 첫소리가 다른 보기를 지운다 (Week 03 검수 35번)
+        if (part === 'V') for (const it of result?.items || []) it.sentence = neutralArticles(it.sentence)
+        if (part === 'VI' && result) result.story = neutralArticles(result.story)
         // PART V 는 만든 뒤 정답 없이 한 번 더 풀어 복수 정답을 점검한다 (시험지 검수 기준)
         if (part === 'V') await checkPartVAnswers(result, { model, effort })
         byPart[part] = {
