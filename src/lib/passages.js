@@ -24,6 +24,12 @@ const MARKER_WORDS =
 
 const MARKER_PATTERNS = [
   {
+    // [1~2] 다음 글을 읽고, 물음에 답하시오.   — 문항 여럿이 딸린 지문 머리. 지문 번호가 아니라 문항 번호의 범위다
+    // (Week 07 장문 독해 문제집: 이것을 못 알아봐 문항 번호 1. 2. … 로 나누는 바람에 첫 지문이 사라졌다)
+    re: /^[[【〔<(]\s*(\d{1,3})\s*[~∼〜～–-]\s*(\d{1,3})\s*[\]】〕>)][.):]?\s*(.*)$/,
+    read: (m) => (Number(m[2]) >= Number(m[1]) ? { no: Number(m[1]), to: Number(m[2]), rest: m[3], style: 'range' } : null),
+  },
+  {
     // [1]  【01】  <2>  (3)
     re: /^[[【〔<(]\s*(\d{1,3})\s*[\]】〕>)][.):]?\s*(.*)$/,
     read: (m) => ({ no: Number(m[1]), rest: m[2], style: 'bracket' }),
@@ -68,7 +74,7 @@ const MARKER_PATTERNS = [
 ]
 
 /** 오인 소지가 적은 표기일수록 높다. 맨 숫자(dot)가 가장 위험하다. */
-const STYLE_BONUS = { word: 30, 'ko-ordinal': 25, bracket: 20, id: 20, 'ko-no': 15, paren: 5, dot: 0 }
+const STYLE_BONUS = { word: 30, 'ko-ordinal': 25, range: 25, bracket: 20, id: 20, 'ko-no': 15, paren: 5, dot: 0 }
 const styleBonus = (style) => STYLE_BONUS[style.split(':')[0]] ?? 0
 
 export function classifyLine(line) {
@@ -92,6 +98,13 @@ const CIRCLED =
   '\\u249C-\\u24B5\\u24B6-\\u24CF\\u24D0-\\u24E9' + // ⒜… Ⓐ… ⓐ…
   '\\u3260-\\u327B' // ㉠… ㉮…
 const INSERT_MARK = new RegExp(`[(（[]?\\s*[${CIRCLED}]\\s*[)）\\]]?`, 'g')
+
+/**
+ * 어휘 · 지칭 문항의 밑줄 표시. "no longer (a) aware of" · "(b) She used to" 처럼 소문자 (a)~(e) 가 낱말 앞에 붙는다.
+ * 동그라미 글자와 같은 문항 표시라 함께 걷어낸다. 대문자 (A) 는 단락 이름표나 요약문 빈칸이라 여기서 건드리지 않는다.
+ * (Week 07 Ch13: 장문 세 지문 모두 (a)~(e) 가 출처 문장에 남을 뻔했다)
+ */
+const UNDERLINE_MARK = /[(（]\s*[a-e]\s*[)）]/g
 
 /**
  * 어휘 각주 줄. "*autonomy: 자율성  **earmarking: 지정 예산" 처럼 별표로 시작한다.
@@ -118,6 +131,14 @@ const QUESTION_STEM = /[가-힣].*(?:것은|것을|것끼리|고르시오|쓰시
 const CHOICE_ORDER = [...'①②③④⑤⑥⑦⑧⑨⑩']
 
 /**
+ * <보기> 상자. 내용 일치 문항이 "(a) Although the Atlantic walrus was …" 처럼 지문을 바꿔 쓴 영어 문장을
+ * 늘어놓는다. 지문이 아니므로 상자 머리부터 이름표가 붙은 줄이 이어지는 데까지 걷어낸다
+ * (Week 07 장문 독해 문제집: 보기 문장이 지문 끝에 붙었다).
+ */
+const BOGI_LINE = /^[<＜〈[]\s*보\s*기\s*[>＞〉\]]/
+const BOGI_ITEM = new RegExp(`^\\s*(?:[(（]\\s*[a-hA-Hㄱ-ㅎ]\\s*[)）]|[a-hㄱ-ㅎ]\\s*[.)]|[${CIRCLED}])`)
+
+/**
  * 지문 본문이 아니라 문항 장치인 줄의 위치.
  *
  * 선지가 완결된 영어 문장이면 CHOICE_LINE 만으로는 본문과 가를 수 없다. 그래서 발문
@@ -130,6 +151,14 @@ function apparatusLines(lines) {
   lines.forEach((line, i) => {
     if (FOOTNOTE_LINE.test(line) || QUESTION_STEM.test(line) || LABEL_ONLY_LINE.test(line)) skip.add(i)
     else if (CHOICE_LINE.test(line) && !ENDS_SENTENCE.test(line)) skip.add(i)
+    if (BOGI_LINE.test(line)) {
+      skip.add(i)
+      for (let j = i + 1; j < lines.length; j++) {
+        if (!lines[j]) continue
+        if (!BOGI_ITEM.test(lines[j])) break
+        skip.add(j)
+      }
+    }
     if (!QUESTION_STEM.test(line)) return
     const block = []
     for (let j = i + 1; j < lines.length && block.length < CHOICE_ORDER.length; j++) {
@@ -143,12 +172,12 @@ function apparatusLines(lines) {
 }
 
 /**
- * 순서 배열 문항의 단락 이름표. "(A) So, living in …" 처럼 단락 첫머리에 붙는다.
+ * 단락 이름표. 순서 배열 문항의 "(A) So, living in …", 문단 제목 문항의 "[P1] If human beings …" 처럼 단락 첫머리에 붙는다.
  * 빈칸이 아니라 이름표라 걷어내면 그만이다. 뒤에 대문자(또는 여는 따옴표)가 와야 이름표로 본다 —
  * 요약문의 "(A) conversation …" 같은 빈칸은 문장 가운데에 오고 뒤에 소문자가 온다.
  * (Week 07 검수: 출처 문장 26개가 "(A) …" · "(C) …" 로 시작했다)
  */
-const PARAGRAPH_LABEL = /^\s*[(（]\s*[A-E]\s*[)）]\s+(?=["'“‘]?[A-Z])/
+const PARAGRAPH_LABEL = /^\s*(?:[(（]\s*[A-E]\s*[)）]|\[\s*P\s*\d{1,2}\s*\])\s+(?=["'“‘]?[A-Z])/
 
 /** 순서 배열 문항 보기 위의 "(A)   (B)" 처럼 이름표만 있는 줄 */
 const LABEL_ONLY_LINE = /^\s*(?:[(（]\s*[A-E]\s*[)）]\s*)+$/
@@ -202,6 +231,7 @@ export function dropSummarySentences(english) {
 export function stripInsertionMarks(text) {
   return String(text)
     .replace(INSERT_MARK, ' ')
+    .replace(UNDERLINE_MARK, ' ')
     .replace(/\s+([,.;:!?])/g, '$1')
     .replace(/\s{2,}/g, ' ')
     .trim()
@@ -225,11 +255,12 @@ function detectMarkers(lines) {
       if (!m) continue
       const hit = pattern.read(m)
       if (!hit) break
-      const { no, rest, style } = hit
+      const { no, to, rest, style } = hit
       if (!Number.isFinite(no) || no < 1 || no > 300) break
       // "3.14" 같은 소수는 번호가 아니라 값이다
       if (style === 'dot' && /^\d/.test(rest)) break
-      hits.push({ line, no, rest: rest.trim(), style })
+      const question = leadsToChoices(lines, line, rest.trim())
+      hits.push({ line, no, ...(to ? { to } : {}), rest: rest.trim(), style, question })
       break // 한 줄에는 한 가지 표기만 인정한다
     }
   })
@@ -263,24 +294,72 @@ function ascendingRun(items) {
  * 해석문 속 "1번 지문은 …" 같은 줄도 (다음 지문의 영어를 보고) 지문 머리로
  * 통과해버린다. 그래서 번호 뒤에 남은 내용, 그게 비었으면 바로 다음
  * 비지 않은 줄, 딱 거기까지만 본다.
+ *
+ * 다만 번호 뒤에 남은 것이 "[13강 기출 Practice] 다음 글을 읽고 물음에 답하시오." 처럼
+ * 꼬리표나 발문뿐이면 그 줄은 지문 머리의 일부라 바로 다음 줄을 본다. 다음 줄이 선지면 지문이 아니다.
  */
 function startsPassage(lines, idx, rest) {
-  if (rest) return classifyLine(rest) === 'en'
-  for (let i = idx + 1; i < lines.length; i++) {
-    if (lines[i]) return classifyLine(lines[i]) === 'en'
-  }
-  return false
+  if (rest && !isHeadText(rest)) return classifyLine(rest) === 'en'
+  const next = nextIndex(lines, idx)
+  return next !== -1 && classifyLine(lines[next]) === 'en' && !opensChoices(lines, next)
 }
 
-function scoreRun(run, dropped, lines) {
+/** 번호 뒤에 붙은 말이 꼬리표 "[13강 01~02]" 나 발문 · 안내문뿐인가 */
+const TAG_ONLY = /^(?:[[【〔<(][^\]】〕>)]*[\]】〕>)]\s*)+$/
+const isHeadText = (rest) => TAG_ONLY.test(rest) || QUESTION_STEM.test(rest)
+
+function nextIndex(lines, idx) {
+  for (let i = idx + 1; i < lines.length; i++) if (lines[i]) return i
+  return -1
+}
+
+/**
+ * 이 줄이 선지 묶음의 첫 줄인가. ① 로 시작하면서 문장으로 끝나지 않거나, 다음 줄이 ② 로 이어진다.
+ * 첫 단어에 ① 이 붙은 어법 지문은 문장으로 끝나고 다음 줄이 ② 로 시작하지 않아 걸리지 않는다.
+ */
+function opensChoices(lines, i) {
+  const line = lines[i] ?? ''
+  if (!line.startsWith('①')) return false
+  if (!ENDS_SENTENCE.test(line)) return true
+  return (lines[nextIndex(lines, i)] ?? '').startsWith('②')
+}
+
+/**
+ * 문항 번호 머리 — "<01> 윗글의 제목으로 가장 적절한 것은?" 다음에 지문 없이 곧장 선지나 <보기>가 온다.
+ * 지문은 이 번호보다 앞에 있다.
+ *
+ * 지문이 문항보다 먼저 나오는 장문 독해에서는 이런 번호가 지문 번호보다 많고 고르게 퍼져 있어
+ * 점수로는 지문 번호를 이긴다. 그러면 첫 문항 앞의 첫 지문이 통째로 버려진다(Week 07 Ch13).
+ * 그래서 점수에서는 지문 수로 치지 않는다. 다만 지문 번호가 따로 없는 문서에서는 이 번호가 유일한
+ * 경계이므로 경계로는 그대로 쓰고, 첫 머리가 문항 번호면 그 앞 글을 첫 지문으로 살린다.
+ */
+function leadsToChoices(lines, idx, rest) {
+  let at = idx
+  let stem = rest
+  if (!stem) {
+    at = nextIndex(lines, idx)
+    stem = lines[at] ?? ''
+  }
+  if (!QUESTION_STEM.test(stem)) return false
+  const next = nextIndex(lines, at)
+  return opensChoices(lines, next) || BOGI_LINE.test(lines[next] ?? '')
+}
+
+/** 범위 머리 "[15~16]" 에 딸린 문항 번호인가 — 범위 머리가 앞에 있고 번호가 그 범위 안에 든다 */
+const inRange = (mk, ranges) => ranges.some((r) => r.line < mk.line && r.no <= mk.no && mk.no <= r.to)
+
+function scoreRun(run, dropped, lines, ranges = []) {
   const n = run.length
   if (n < 2) return -Infinity
   const span = run[n - 1].line - run[0].line
   const withEnglish = run.filter((mk) => startsPassage(lines, mk.line, mk.rest)).length
+  // 문항 번호 머리는 지문 수로 치지 않는다. 범위 머리에 딸린 것은 그 지문을 범위 머리가 세므로 깎지 않는다
+  const questions = run.filter((mk) => mk.question && !inRange(mk, ranges)).length
 
-  let score = n * 10 + styleBonus(run[0].style)
+  let score = (n - questions) * 10 + styleBonus(run[0].style)
   if (run[0].no === 1) score += 15 // 1번부터 시작
-  if (run[n - 1].no - run[0].no === n - 1) score += 20 // 번호가 끊기지 않음
+  // 번호가 끊기지 않음. [1~2] [3~4] 처럼 범위로 적은 머리는 앞 범위의 끝 다음 번호로 이어져야 한다
+  if (run.every((mk, i) => i === 0 || mk.no === (run[i - 1].to ?? run[i - 1].no) + 1)) score += 20
   score -= dropped * 8 // 같은 표기에서 걸러낸 오탐이 많을수록 못 믿는다
   score += Math.round((span / Math.max(lines.length - 1, 1)) * 30) // 문서 전체에 퍼져 있어야 한다
   score += Math.round((withEnglish / n) * 40)
@@ -295,15 +374,45 @@ function pickMarkers(lines) {
     if (!byStyle.has(hit.style)) byStyle.set(hit.style, [])
     byStyle.get(hit.style).push(hit)
   }
+  // 범위 머리 "[15~16] 다음 글을 읽고, 물음에 답하시오." 는 혼자 다투지 않고 고른 번호에 더하는 경계다(아래)
+  const ranges = byStyle.get('range') || []
   const scored = []
   let best = null
   for (const [style, items] of byStyle) {
+    if (style === 'range') continue
     const run = ascendingRun(items)
-    const candidate = { style, items, run, score: scoreRun(run, items.length - run.length, lines) }
+    const candidate = { style, items, run, score: scoreRun(run, items.length - run.length, lines, ranges) }
     scored.push(candidate)
     if (candidate.score >= 30 && (!best || candidate.score > best.score)) best = candidate
   }
-  return best ? withSections(best, scored, lines) : null
+
+  if (!best) {
+    // 다른 번호가 없을 때만 범위 머리 혼자 나눈다. 문서 전체가 문항 묶음이어야 한다 — 1번부터 빈틈없이 이어지고,
+    // 첫 범위 머리 앞에 지문이 없다. 중간에 빈 번호가 있거나 앞에 지문이 있으면(낱문항 지문 뒤에 장문 묶음이 붙은
+    // 자료집) 범위 머리가 없는 지문은 앞 지문에 붙거나 버려진다
+    const run = ascendingRun(ranges)
+    const coversAll =
+      run.length >= 2 &&
+      run[0].no === 1 &&
+      run.every((mk, i) => i === 0 || mk.no === run[i - 1].to + 1) &&
+      !lines.slice(0, run[0].line).some((l) => l.length >= 100 && classifyLine(l) === 'en')
+    return coversAll ? { style: 'range', run, sections: [{ style: 'range', sample: lines[run[0].line], count: run.length }] } : null
+  }
+  const picked = withSections(best, scored, lines)
+  if (!ranges.length) return picked
+
+  // 내신 시험지는 낱문항 지문을 "1." "2." 로, 문항 여럿이 딸린 지문을 "[15~16]" 으로 적어 두 표기가 섞인다.
+  // 장문 독해 문제집은 모든 지문이 "[1~2]" 이고 "1." "2." 는 지문 뒤의 문항이다.
+  // 어느 쪽이든 범위 머리는 지문 경계다. 범위 머리 바로 뒤에 낱문항 번호가 오면("[3~5] … 고르시오." 다음 "3.")
+  // 그 사이는 영어가 없어 버려지므로, 더해도 낱문항 지문을 가르지 않는다.
+  // 범위에 든 문항 번호(15. 16.)는 지문 뒤에 오는 문항이라 경계에서 뺀다. 남겨 두면 선지만 든 조각이 생긴다.
+  const sections = [...picked.sections, { style: 'range', sample: lines[ranges[0].line], count: ranges.length }]
+  return {
+    style: sections.map((s) => s.style).join(' + '),
+    run: [...picked.run.filter((mk) => !(mk.question && inRange(mk, ranges))), ...ranges].sort((a, b) => a.line - b.line),
+    sections,
+    base: picked.run, // 범위 머리를 더하기 전 — splitPassages 가 이것만으로도 지문이 나오는지 본다
+  }
 }
 
 /* ── 한 문서 안의 여러 묶음 ────────────────────────────────────────
@@ -368,6 +477,24 @@ function buildPassage(id, no, lines) {
   }
 }
 
+/** 번호 머리마다 그 줄부터 다음 머리 앞까지를 지문 하나로 자른다. 영어가 없는 조각은 버린다. */
+function cutAt(lines, run) {
+  const passages = []
+  // 첫 머리가 문항 번호면 지문은 그 앞에 있다. 첫 머리 앞은 보통 표지라 버리지만 이때만은 첫 지문이다
+  if (run[0].question) {
+    const p = buildPassage('p0', 0, lines.slice(0, run[0].line))
+    if (p.english) passages.push(p)
+  }
+  run.forEach((marker, idx) => {
+    const to = idx + 1 < run.length ? run[idx + 1].line : lines.length
+    // 머리 줄은 번호를 떼어낸 나머지만 남긴다
+    const slice = [marker.rest, ...lines.slice(marker.line + 1, to)]
+    const p = buildPassage(`p${idx + 1}`, marker.no, slice)
+    if (p.english) passages.push(p)
+  })
+  return passages
+}
+
 /**
  * `markerSections` 는 번호 묶음마다 { style, sample, count } 이다. 묶음이 둘 이상이면
  * `markerStyle` 은 각 표기를 " + " 로 이은 것이다.
@@ -378,15 +505,10 @@ export function splitPassages(rawText) {
   const best = pickMarkers(lines)
 
   // 1순위: 일관된 번호 표기를 찾았으면 그것으로 나눈다.
-  if (best) {
-    const passages = []
-    best.run.forEach((marker, idx) => {
-      const to = idx + 1 < best.run.length ? best.run[idx + 1].line : lines.length
-      // 머리 줄은 번호를 떼어낸 나머지만 남긴다
-      const slice = [marker.rest, ...lines.slice(marker.line + 1, to)]
-      const p = buildPassage(`p${idx + 1}`, marker.no, slice)
-      if (p.english) passages.push(p)
-    })
+  // 범위 머리를 더했으면, 더하기 전의 번호만으로도 지문이 둘 이상 나와야 한다. 서술형 소문항 "(1)" "(2)" 처럼
+  // 지문 번호가 아닌 번호가 범위 머리 덕에 살아나 문서를 몇 덩어리로 뭉치지 않게 한다.
+  if (best && (!best.base || cutAt(lines, best.base).length >= 2)) {
+    const passages = cutAt(lines, best.run)
     if (passages.length >= 2) {
       return {
         passages: renumber(passages),

@@ -986,5 +986,95 @@ check('PART II · III 도 어구가 있으면 "말"',
 check('PART III — 어구가 없으면 원래 문구', instructionOf('III', { items: [{ left: 'a', right: 'b', headword: 'c', answer: 'd' }] }) === '주어진 두 단어의 관계와 같도록 빈칸에 알맞은 단어를 쓰시오.')
 check('PART I · IV · VI 은 그대로', instructionOf('VI', {}) === '글의 빈칸에 들어갈 낱말을 보기에서 고르시오.')
 
+/* 21. 지문 나누기 — 장문 독해 (Week 07) --------------------------- */
+console.log('\n[21] 지문 나누기 — 지문 뒤에 문항이 오는 장문 독해')
+const { stripInsertionMarks: stripMarks } = await import('../src/lib/passages.js')
+const body = (topic) => [`${topic} shapes how we live every day.`, `Most people never notice ${topic.toLowerCase()} at all.`, `Yet ${topic.toLowerCase()} changes slowly over time.`]
+const titleChoices = ['① Blending In: When Tech Stops Feeling Like Tech', '② Digital Interfaces Are Becoming Too Complicated!', '③ Out-of-body Experience', '④ How Software Affects Work', '⑤ Wearable Technology']
+const vocabChoices = '① (a) ② (b) ③ (c) ④ (d) ⑤ (e)'
+
+// 수능완성 Ch13 — 지문 번호 "1." 뒤에 문항 번호 "<01>" "<02>" 가 따로 붙는다. 문항 번호가 더 많아 지문 번호로 잡히면 1번 지문이 버려졌다
+const ch13 = [
+  '1. [13강 기출 Practice]   다음 글을 읽고 물음에 답하시오.',
+  'In design, people are no longer (a) aware of the technology. They (b) hidden the seams inside.',
+  ...body('Seamlessness'),
+  '*seamlessness: 이음매 없음',
+  '<01> 윗글의 제목으로 가장 적절한 것은?', ...titleChoices,
+  '<02> 밑줄 친 (a)~(e) 중에서 문맥상 낱말의 쓰임이 적절하지 않은 것은?', vocabChoices,
+  '기술적 설계에서 이음매 없음을 향한 열망은 일상에 녹아드는 것을 목표로 한다.',
+  '', '2. [13강 01~02]   다음 글을 읽고 물음에 답하시오.',
+  'Young children already use sophisticated methods for deciding whom to trust.', ...body('Trust'),
+  '<03> 윗글의 제목으로 가장 적절한 것은?', ...titleChoices,
+  '<04> 밑줄 친 (a)~(e) 중에서 문맥상 낱말의 쓰임이 적절하지 않은 것은?', vocabChoices,
+  '아이들은 누구를 믿을지 결정하기 위해 정교한 방법을 사용한다.',
+  '', '3. [13강 03~05]   다음 글을 읽고 물음에 답하시오.',
+  '(A) Sally decided to try to rest. Sally couldn\'t stay mad at her if (a) she tried.',
+  '(B) His green eyes danced. (b) She used to wish she got his blond hair.', ...body('Family'),
+  '<05> 주어진 글 (A)에 이어질 내용을 순서에 맞게 배열한 것으로 가장 적절한 것은?', '① (B)-(D)-(C) ② (C)-(B)-(D) ③ (C)-(D)-(B) ④ (D)-(B)-(C) ⑤ (D)-(C)-(B)',
+  '<06> 밑줄 친 (a)~(e) 중에서 가리키는 대상이 나머지 넷과 다른 것은?', vocabChoices,
+  '<07> 윗글에 관한 내용으로 적절하지 않은 것은?', '① Lucy는 Sally의 배 위로 뛰어올랐다.', '② Sally는 곱슬머리를 물려받았다.', '③ Lucy는 하이 파이브를 했다.',
+  'Sally는 쉬어 보기로 결심했다.',
+].join('\n')
+const c13 = splitP(ch13)
+check('Ch13 — 지문 번호 셋을 모두 찾는다', c13.passages.length === 3 && c13.markerStyle === 'dot', `${c13.passages.length}개 · ${c13.markerStyle}`)
+check('Ch13 — 1번 지문이 살아 있다', /^In design, people are no longer aware/.test(c13.passages[0]?.english || ''), c13.passages[0]?.english)
+check('Ch13 — 밑줄 표시 (a)~(e) 는 걷는다 (문장 첫머리 (b) She 포함)',
+  !/\([a-e]\)/.test(c13.passages.map((p) => p.english).join(' ')) && /She used to wish/.test(c13.passages[2]?.english || ''))
+check('Ch13 — 선지 · 순서 보기는 지문에 없다', !/Blending In|\(B\)-\(D\)/.test(c13.passages.map((p) => p.english).join(' ')))
+
+// 장문 독해 문제집 — 지문 머리는 "[1~2]", "1." "2." 는 지문 뒤에 오는 문항 번호다. <보기> 문장과 [P1] 이름표도 있다
+const workbook7 = [
+  'WEEK 07. 장문 독해', '',
+  '[1~2] 다음 글을 읽고, 물음에 답하시오.', 'Few pick up a novel and criticize it for being unreal.', ...body('Fiction'),
+  '* scorn: 비웃음',
+  '1. 윗글의 제목으로 가장 적절한 것은?', '① Drawn to the Unreal ② What True Stories Teach ③ The Science of Plot ④ Why We Read ⑤ Fiction Today',
+  '2. 밑줄 친 (a)~(e) 중에서 문맥상 낱말의 쓰임이 적절하지 않은 것은?', vocabChoices,
+  '[3~4] 다음 글을 읽고 물음에 답하시오.',
+  '[P1] If human beings are naturally inclined to cooperate, why do relationships become competitive?',
+  '[P2] Social dilemmas occur when members of a group are in conflict.', ...body('Cooperation'),
+  '3. 윗글의 내용과 일치하지 않는 것을 모두 고른 것은?', '＜보기＞',
+  '(a) Although human beings prefer cooperation, relationships become competitive.',
+  '(b) Natural public goods remain sustainable only if used wisely.',
+  '(c) The harvesting dilemma is worsened by a time delay.',
+  '① (a), (b) ② (a), (c) ③ (b), (c) ④ (a), (b), (c) ⑤ (b)',
+  '4. 윗글의 빈칸에 들어갈 말로 가장 적절한 것은?', '① cooperation pays ② greed wins ③ time heals ④ rules fail ⑤ none',
+].join('\n')
+const w7 = splitP(workbook7)
+check('문제집 — 범위 머리 [1~2] [3~4] 로 지문 둘', w7.passages.length === 2, `${w7.passages.length}개 · ${w7.markerStyle}`)
+check('문제집 — 첫 지문이 살아 있다', /^Few pick up a novel/.test(w7.passages[0]?.english || ''), w7.passages[0]?.english)
+check('문제집 — <보기> 문장은 지문에 없다', !/Although human beings prefer|harvesting dilemma/.test(w7.passages[1]?.english || ''), w7.passages[1]?.english)
+check('문제집 — [P1] 이름표는 걷는다', /^If human beings/.test(w7.passages[1]?.english || '') && !/\[P\d\]/.test(w7.passages[1]?.english || ''))
+
+// 내신 시험지 — 낱문항 지문 "1." 사이에 "[3~4]" 묶음이 끼어 있다. 묶음 지문이 2번 지문에 붙으면 안 된다
+const mixedExam = [
+  '1. 다음 글의 주제로 가장 적절한 것은?', 'Historically, the walrus was hunted to near extinction.', ...body('Hunting'), ...titleChoices, '',
+  '2. 다음 글의 요지로 가장 적절한 것은?', 'The electronic exchange of data is now required.', ...body('Data'), ...titleChoices, '',
+  '[3~4] 다음 글을 읽고, 물음에 답하시오.', 'A woman became subject to rumors at work.', ...body('Rumor'),
+  '3. 윗글의 제목으로 가장 적절한 것은?', ...titleChoices,
+  '4. 윗글의 요지로 가장 적절한 것은?', ...titleChoices, '',
+  '5. 다음 글의 제목으로 가장 적절한 것은?', 'The shift from oral to literate culture changed memory.', ...body('Writing'), ...titleChoices,
+].join('\n')
+const mx = splitP(mixedExam)
+check('내신 — 낱문항 지문과 묶음 지문을 모두 가른다', mx.passages.length === 4, mx.passages.map((p) => p.english.slice(0, 20)).join(' | '))
+check('내신 — 묶음 지문이 앞 지문에 붙지 않는다', !/rumors/.test(mx.passages[1]?.english || '') && /^A woman became/.test(mx.passages[2]?.english || ''))
+
+// 지문 번호가 따로 없고 지문 뒤에 문항 번호만 있는 문서 — 첫 문항 앞의 글이 첫 지문이다
+const passageFirst = [
+  'Many animals pursue a mixed strategy of accumulating fat.', ...body('Body size'),
+  '1. 윗글의 제목으로 가장 적절한 것은?', ...titleChoices, '',
+  'Writing of a commentary on Tolstoy, the critic agrees with Lenin.', ...body('Literature'),
+  '2. 윗글의 제목으로 가장 적절한 것은?', ...titleChoices,
+].join('\n')
+const pf = splitP(passageFirst)
+check('지문 → 문항 순서 — 첫 지문도 살린다', pf.passages.length === 2 && /^Many animals/.test(pf.passages[0]?.english || ''), pf.passages.map((p) => p.english.slice(0, 20)).join(' | '))
+
+// 수능완성 Week 04~06 처럼 "1. [7강 기출 Practice] 발문" 다음에 지문이 오는 문서는 그대로
+const headFirst = [1, 2, 3].flatMap((n) => [`${n}. [7강 0${n}] 다음 빈칸에 들어갈 말로 가장 적절한 것은?`, `Animals of group ${n} live here.`, ...body(`Topic${n}`), ...titleChoices, ''])
+const hf = splitP(headFirst.join('\n'))
+check('발문 뒤에 지문이 오는 문서는 그대로 "1." 로 나눈다', hf.passages.length === 3 && hf.markerStyle === 'dot' && /^Animals of group 1/.test(hf.passages[0].english), `${hf.passages.length}개 · ${hf.markerStyle}`)
+
+check('밑줄 표시 (a) 는 걷고 대문자 (A) 는 둔다', stripMarks('people are no longer (a) aware of it.') === 'people are no longer aware of it.' && stripMarks('(A) conversation') === '(A) conversation')
+check('[P2] 단락 이름표', stripParagraphLabel('[P2] Social dilemmas occur.') === 'Social dilemmas occur.')
+
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)

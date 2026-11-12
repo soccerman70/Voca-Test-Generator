@@ -19,6 +19,7 @@ const SPLIT_LABEL = {
 /** 어떤 번호 표기를 기준으로 잡았는지 알려주면, 잘못 잡았을 때 바로 눈치챌 수 있다. */
 const STYLE_SAMPLE = {
   bracket: '[1]',
+  range: '[1~2]',
   'ko-no': '1번',
   dot: '1.',
   paren: '1)',
