@@ -132,6 +132,20 @@ export function testHeadParts(title, head = {}) {
   }
 }
 
+/**
+ * 제목에 든 연도 · 주차를 머리 칸 값으로 옮겨 적는다. 제목이 없으면 머리 칸을 그대로 돌려준다.
+ *
+ * 제목에 연도가 있는 동안은 제목 값이 이기지만, 제목을 바꾸며 연도가 빠지면(`2027 겨울학기 완성반 Week02` →
+ * `겨울학기 단어학습`) 머리 칸 값이 찍힌다. 그 칸이 기본값(올해 = 2026)이면 2027 겨울학기 시험지에 2026 이 찍힌다
+ * (Week 02 검수). 주차도 같은 이유로 빠졌다(Week 01 시험지의 `Week #`). 그래서 제목이 바뀌기 직전 · 단어장을 불러올 때
+ * 제목의 연도 · 주차를 머리 칸에 옮겨 둔다(store 의 setDocTitle · loadWordbook · replaceWordbook).
+ */
+export function headFromTitle(title, head = {}) {
+  const { year, week } = splitTitleHead(title)
+  const w = week.replace(/^(?:week|wk)\s*/i, '')
+  return { ...head, ...(year ? { year } : {}), ...(w ? { week: w } : {}) }
+}
+
 /** 머리 칸 값 — 제목에서 뗀 연도 · 주차가 이기고, 붙여 쓴 `반` · `주차` · `Week` · `년` 은 걷는다. 비면 빈 문자열 */
 function headFields(title, head = {}) {
   const clean = (v, re) => String(v ?? '').trim().replace(re, '').trim()
@@ -283,6 +297,33 @@ const INSTRUCTION = {
   VI: '글의 빈칸에 들어갈 낱말을 보기에서 고르시오.',
 }
 
+/** 보기 · 문항에 두 낱말 이상의 어구가 있을 때의 지시문 — "단어" 대신 "말" */
+const INSTRUCTION_PHRASE = {
+  II: '다음 영영풀이에 해당하는 말을 보기에서 고르시오.',
+  III: '주어진 두 말의 관계와 같도록 빈칸에 알맞은 말을 쓰시오.',
+  V: '빈칸에 들어가기에 적절한 말을 모두 고르시오.',
+}
+
+const hasPhrase = (words) => words.some((w) => /\S\s+\S/.test(String(w ?? '').trim()))
+
+/**
+ * PART 지시문. II · III · V 는 보기 · 문항에 어구가 하나라도 있으면 "단어" 를 "말" 로 쓴다
+ * (Week 02 검수 30번: 선지에 point of view · case in point 가 있는데 "적절한 단어를" 이었다. Week 01 은 "말을").
+ * @param {'I'|'II'|'III'|'IV'|'V'|'VI'} part
+ * @param {object} [result] 그 PART 의 AI 결과
+ */
+export function instructionOf(part, result) {
+  const words =
+    part === 'II'
+      ? [...(result?.definitions || []).map((d) => d.headword), result?.distractor?.word]
+      : part === 'III'
+        ? (result?.items || []).flatMap((it) => [it.left, it.right, it.headword, it.answer, ...(it.accepted || [])])
+        : part === 'V'
+          ? (result?.items || []).flatMap((it) => it.choices || [])
+          : []
+  return INSTRUCTION_PHRASE[part] && hasPhrase(words) ? INSTRUCTION_PHRASE[part] : INSTRUCTION[part]
+}
+
 /* ------------------------------------------------------------------ */
 /* 시험지                                                              */
 /* ------------------------------------------------------------------ */
@@ -323,7 +364,7 @@ function partOneTable(items) {
 function partTwo(gen) {
   const defs = gen?.result?.definitions || []
   const words = [...defs.map((d) => d.headword), gen?.result?.distractor?.word].filter(Boolean).sort()
-  const out = [partHead('II', INSTRUCTION.II), choiceBox(words)]
+  const out = [partHead('II', instructionOf('II', gen?.result)), choiceBox(words)]
 
   defs.forEach((d, i) => {
     out.push(
@@ -337,7 +378,7 @@ function partTwo(gen) {
 
 function partThree(gen) {
   const items = gen?.result?.items || []
-  const out = [partHead('III', INSTRUCTION.III)]
+  const out = [partHead('III', instructionOf('III', gen?.result))]
   items.forEach((it, i) => {
     out.push(
       para(
@@ -363,7 +404,7 @@ function partFour(partIV, texts) {
 
 function partFive(gen) {
   const items = gen?.result?.items || []
-  const out = [partHead('V', INSTRUCTION.V)]
+  const out = [partHead('V', instructionOf('V', gen?.result))]
   const marks = ['①', '②', '③', '④', '⑤']
   items.forEach((it, i) => {
     out.push(para([t(`${26 + i}. `, { bold: true }), t(it.sentence)], { spacing: { after: 45 } }))

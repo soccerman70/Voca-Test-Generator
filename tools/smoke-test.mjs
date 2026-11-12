@@ -945,5 +945,46 @@ check('옛 시험지 — 힌트 pr · 세 말 모두 정답', nowIII.hint === 'p
 check('옛 시험지 — a(n) · 옛 검사 다시 셈', nowGen.byPart.VI.result.story.includes('a(n) {35}') && !nowGen.byPart.III.issues.includes('옛 검사'))
 check('옛 시험지 — 저장된 값은 그대로', oldGen.byPart.III.result.items[0].hint === 'prev' && oldGen.byPart.VI.result.story.includes(' a {35}'))
 
+/* 20. Week 02 시험지 검수 ------------------------------------------ */
+console.log('\n[20] Week 02 시험지 검수 — 머리 연도 · 어구가 있으면 "말"')
+const { headFromTitle, instructionOf } = await import('../src/lib/exportDocx.js')
+// 단어장 · 파일은 2027 인데 시험지 머리와 정답해설에 2026 — 제목을 "겨울학기 단어학습" 으로 바꾸며 연도가 빠지고 칸의 올해가 찍혔다
+check('제목의 연도 · 주차를 머리 칸으로', JSON.stringify(headFromTitle('2027 겨울학기 완성반 Week02', { year: '2026', klass: '완성', week: '' })) ===
+  JSON.stringify({ year: '2027', klass: '완성', week: '02' }), JSON.stringify(headFromTitle('2027 겨울학기 완성반 Week02', { year: '2026', klass: '완성', week: '' })))
+check('제목에 없으면 칸 그대로', JSON.stringify(headFromTitle('겨울학기 단어학습', { year: '2027', klass: '완성', week: '03' })) === JSON.stringify({ year: '2027', klass: '완성', week: '03' }))
+check('WEEK_09 · 9주차도 숫자만 옮긴다', headFromTitle('2027_겨울학기_[실력반]_WEEK_09', {}).week === '09' && headFromTitle('겨울학기 9주차', {}).week === '9')
+
+// store — persist 가 window.localStorage 를 찾으므로 잠깐 메모리 저장소를 붙인다(다른 검사에 새지 않게 맨 끝에서)
+const memStore = new Map()
+globalThis.window = { localStorage: { getItem: (k) => memStore.get(k) ?? null, setItem: (k, v) => memStore.set(k, String(v)), removeItem: (k) => memStore.delete(k) } }
+const { useStore } = await import('../src/store.js')
+delete globalThis.window
+const st = useStore.getState
+st().setQuizHead({ year: '2026', klass: '', week: '' }) // 처음 채워지는 올해
+st().loadWordbook({ rows: [{ id: 'w', headword: 'a' }], passages: [], docTitle: '2027 겨울학기 완성반 Week02' })
+check('단어장을 불러오면 제목의 연도 · 주차가 칸에', st().quizHead.year === '2027' && st().quizHead.week === '02', JSON.stringify(st().quizHead))
+st().setQuizHead({ year: '2026' }) // 칸이 올해로 남아 있던 경우
+st().setDocTitle('겨울학기 단어학습')
+const lead02 = testHeadParts(st().docTitle, st().quizHead).lead
+check('제목에서 연도를 지우면 그 연도가 머리에 남는다', lead02.startsWith('2027 겨울학기 단어학습') && st().quizHead.week === '02', lead02)
+st().reset()
+check('초기화해도 연도는 남고 반 · 주차는 비운다', st().quizHead.year === '2027' && !st().quizHead.week && !st().quizHead.klass, JSON.stringify(st().quizHead))
+st().setQuizHead({ year: '2026' })
+st().loadWordbook({ rows: [{ id: 'a', headword: 'a' }], passages: [], docTitle: '겨울학기 A' })
+st().loadWordbook({ rows: [{ id: 'b', headword: 'b' }], passages: [], docTitle: '겨울학기 B' }) // A 가 보관된다 (연도 2026)
+st().setQuizHead({ year: '2027' })
+st().restorePrevWork()
+check('되살려도 지금 연도', st().docTitle === '겨울학기 A' && st().quizHead.year === '2027', JSON.stringify([st().docTitle, st().quizHead]))
+
+// 30번 선지에 point of view · case in point — "적절한 단어를" 이 아니라 "적절한 말을" (Week 01 과 같게)
+const v02 = { items: [{ choices: ['exception', 'point of view', 'obstacle', 'case in point', 'contradiction'] }] }
+check('PART V — 선지에 어구가 있으면 "적절한 말을"', instructionOf('V', v02) === '빈칸에 들어가기에 적절한 말을 모두 고르시오.', instructionOf('V', v02))
+check('PART V — 낱말뿐이면 "적절한 단어를"', instructionOf('V', { items: [{ choices: ['outbreak', 'flare-up'] }] }) === '빈칸에 들어가기에 적절한 단어를 모두 고르시오.')
+check('PART II · III 도 어구가 있으면 "말"',
+  instructionOf('II', { definitions: [{ headword: 'reluctant' }], distractor: { word: 'at odds' } }).includes('해당하는 말을') &&
+  instructionOf('III', { items: [{ left: 'hide', right: 'conceal', headword: 'absorb', answer: 'take in' }] }).startsWith('주어진 두 말의'))
+check('PART III — 어구가 없으면 원래 문구', instructionOf('III', { items: [{ left: 'a', right: 'b', headword: 'c', answer: 'd' }] }) === '주어진 두 단어의 관계와 같도록 빈칸에 알맞은 단어를 쓰시오.')
+check('PART I · IV · VI 은 그대로', instructionOf('VI', {}) === '글의 빈칸에 들어갈 낱말을 보기에서 고르시오.')
+
 console.log(`\n${failures === 0 ? '전체 통과' : `${failures}건 실패`}\n`)
 process.exit(failures ? 1 : 0)

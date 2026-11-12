@@ -8,6 +8,7 @@ import { persist } from 'zustand/middleware'
 import { sentenceAt } from './lib/passages.js'
 import { guessPos, guessLevel } from './lib/posLite.js'
 import { DEFAULT_MODEL, DEFAULT_EFFORT, upgradeModel } from './lib/models.js'
+import { headFromTitle, splitTitleHead } from './lib/exportDocx.js'
 
 let seq = 0
 const nextId = () => `s${Date.now().toString(36)}${(seq += 1).toString(36)}`
@@ -32,7 +33,8 @@ const initial = {
   effort: DEFAULT_EFFORT, // claude -p --effort. 답하기 전에 얼마나 생각할지
   docTitle: '', // 엑셀 첫 줄과 파일 이름에 쓰는 단어장 제목
   // 시험지 머리의 빈칸. 비워 두면 docx 에 손으로 쓸 빈칸(202__ · _____반 · Week #)이 남는다.
-  // 연도는 거의 언제나 올해라 미리 채워 둔다.
+  // 연도는 처음에만 올해로 미리 채운다. 학기 이름의 연도는 달력과 다를 수 있어(2026년 11월의 2027 겨울학기)
+  // 한 번 정한 연도는 초기화 · 되살리기에도 남기고, 제목 · 불러온 단어장에 든 연도를 옮겨 적는다(keepYear · headFromTitle).
   quizHead: { year: String(new Date().getFullYear()), klass: '', week: '' },
 
   focusedId: null,
@@ -70,6 +72,9 @@ const WORK_KEYS = [
 
 const hasWork = (s) => s.rows.length > 0 || s.selections.length > 0 || s.passages.length > 0
 
+/** 지금 쓰는 연도 — 제목에 든 연도가 있으면 그것(머리에 찍히는 값), 없으면 연도 칸 */
+const currentYear = (s) => splitTitleHead(s.docTitle).year || s.quizHead?.year || initial.quizHead.year
+
 /**
  * 지금 작업을 통째로 밀어내는 동작 직전에 한 벌 보관한다. 경고는 습관처럼 넘기게 되므로
  * 바꾼 뒤에도 돌아올 길을 남긴다. 보관할 것이 없으면(빈 작업) 이미 보관한 것을 그대로 둔다.
@@ -93,14 +98,26 @@ export const useStore = create(
       ...initial,
 
       // 초기화도 작업을 통째로 지우므로 한 벌 보관한다. 모델 · effort 설정은 예전처럼 기본값으로 돌아간다.
-      reset: () => set((s) => ({ ...initial, ...keepPrev(s, '초기화') })),
+      // 연도는 남긴다 — 올해로 돌아가면 2027 겨울학기 시험지에 2026 이 찍힌다(Week 02 검수)
+      reset: () =>
+        set((s) => ({ ...initial, ...keepPrev(s, '초기화'), quizHead: { ...initial.quizHead, year: currentYear(s) } })),
 
       /**
        * 보관한 작업을 되살린다. 지금 작업은 버리지 않고 그 자리에 대신 보관한다 —
        * 되살리기를 잘못 눌러도 한 번 더 누르면 돌아온다.
+       * 연도는 지금 값을 둔다 — 보관한 작업에는 미리 채운 올해가 들어 있을 수 있다.
        */
       restorePrevWork: () =>
-        set((s) => (s.prevWork ? { ...s.prevWork.state, quizBusy: {}, ...keepPrev({ ...s, prevWork: null }, '되살리기') } : {})),
+        set((s) =>
+          s.prevWork
+            ? {
+                ...s.prevWork.state,
+                quizHead: { ...initial.quizHead, ...s.prevWork.state.quizHead, year: currentYear(s) },
+                quizBusy: {},
+                ...keepPrev({ ...s, prevWork: null }, '되살리기'),
+              }
+            : {}
+        ),
 
       dismissPrevWork: () => set({ prevWork: null }),
 
@@ -151,6 +168,8 @@ export const useStore = create(
           selections: [],
           focusedId: passages[0]?.id ?? null,
           docTitle,
+          // 단어장 제목(2027 겨울학기 완성반 Week02)의 연도 · 주차를 머리 칸에도 적어 둔다 — 제목을 바꿔도 남는다
+          quizHead: headFromTitle(docTitle, s.quizHead),
           antonymStats: null,
           lastUsage: null,
           confirmedAt: Date.now(),
@@ -175,6 +194,7 @@ export const useStore = create(
           confirmedAt: null,
           step: 'result',
           ...NO_QUIZZES,
+          quizHead: headFromTitle(docTitle || s.docTitle, s.quizHead),
           ...(sameWork
             ? { docTitle: docTitle || s.docTitle }
             : {
@@ -205,7 +225,13 @@ export const useStore = create(
         }),
 
       setTargetCount: (n) => set({ targetCount: Math.max(1, Math.min(500, Number(n) || 0)) }),
-      setDocTitle: (docTitle) => set({ docTitle: String(docTitle).slice(0, DOC_TITLE_MAX) }),
+      /**
+       * 바뀌기 직전 제목의 연도 · 주차를 머리 칸으로 옮긴다. 제목에 연도가 있는 동안은 제목 값이 머리에 찍히므로
+       * 겉으로는 달라지지 않고, 제목에서 연도를 지우는 순간 그 연도가 칸에 남아 있다
+       * (Week 02: `2027 겨울학기 완성반 Week02` 를 `겨울학기 단어학습` 으로 바꾸자 칸의 2026 이 찍혔다).
+       */
+      setDocTitle: (docTitle) =>
+        set((s) => ({ docTitle: String(docTitle).slice(0, DOC_TITLE_MAX), quizHead: headFromTitle(s.docTitle, s.quizHead) })),
       setQuizHead: (patch) => set((s) => ({ quizHead: { ...s.quizHead, ...patch } })),
       setMode: (mode) => set({ mode }),
       setModel: (model) => set({ model }),
