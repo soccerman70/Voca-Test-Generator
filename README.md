@@ -253,7 +253,7 @@ samples/
 
 작업 내용은 localStorage에 보존되므로 새로고침해도 선택한 표제어가 남는다. 헤더의 **초기화**로 지운다.
 
-헤더 제목 옆의 버전(`v1.3`)은 [package.json](package.json) 의 `version`(`1.3.0`, 끝의 `.0` 은 줄여 보인다)을 읽는다.
+헤더 제목 옆의 버전(`v1.4`)은 [package.json](package.json) 의 `version`(`1.4.0`, 끝의 `.0` 은 줄여 보인다)을 읽는다.
 
 ## 점검
 
